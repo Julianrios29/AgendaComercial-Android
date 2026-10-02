@@ -67,7 +67,7 @@ data class DailyOrderActivity(
     val status: String
 )
 
-class CrmDb(context: Context) : SQLiteOpenHelper(context, "agenda_comercial.db", null, 4) {
+class CrmDb(context: Context) : SQLiteOpenHelper(context, "agenda_comercial.db", null, 5) {
 
     override fun onCreate(db: SQLiteDatabase) {
         db.execSQL("""
@@ -101,6 +101,7 @@ class CrmDb(context: Context) : SQLiteOpenHelper(context, "agenda_comercial.db",
                 needs TEXT NOT NULL DEFAULT '',
                 commitments TEXT NOT NULL DEFAULT '',
                 completed_at INTEGER NOT NULL DEFAULT 0,
+                was_prospect_at_completion INTEGER NOT NULL DEFAULT -1,
                 FOREIGN KEY(client_id) REFERENCES clients(id) ON DELETE CASCADE
             )
         """.trimIndent())
@@ -155,6 +156,10 @@ class CrmDb(context: Context) : SQLiteOpenHelper(context, "agenda_comercial.db",
             db.execSQL("ALTER TABLE clients ADD COLUMN bank_account TEXT NOT NULL DEFAULT ''")
             db.execSQL("ALTER TABLE clients ADD COLUMN photo_path TEXT NOT NULL DEFAULT ''")
         }
+        if (oldVersion < 5) {
+            db.execSQL("ALTER TABLE visits ADD COLUMN was_prospect_at_completion INTEGER NOT NULL DEFAULT -1")
+            seedTestClients(db)
+        }
     }
 
     override fun onConfigure(db: SQLiteDatabase) {
@@ -199,6 +204,52 @@ class CrmDb(context: Context) : SQLiteOpenHelper(context, "agenda_comercial.db",
             put("observations", "Ejemplo de ficha que aparece en Prospecciones.")
             put("is_prospect", 1)
         })
+
+        seedTestClients(db)
+    }
+
+    private fun seedTestClients(db: SQLiteDatabase) {
+        val alreadySeeded = db.rawQuery(
+            "SELECT COUNT(*) FROM clients WHERE observations LIKE 'DATOS DE PRUEBA%'",
+            null
+        ).use { cursor ->
+            cursor.moveToFirst()
+            cursor.getInt(0) > 0
+        }
+
+        if (alreadySeeded) return
+
+        val testClients = listOf(
+            arrayOf("Bar La Esquina Test", "Hostelería Esquina Test SL", "BTEST0001", "ES00 0000 0000 0000 0000 0001", "Marta Prueba", "600100001", "marta1@example.test", "Carrer de Prova, 1", "Barcelona", "08001"),
+            arrayOf("Panadería Sol Test", "Forn Sol Test SL", "BTEST0002", "ES00 0000 0000 0000 0000 0002", "Jordi Mostra", "600100002", "jordi2@example.test", "Carrer de Prova, 2", "Barcelona", "08002"),
+            arrayOf("Cafetería Central Test", "Central Cafè Test SL", "BTEST0003", "ES00 0000 0000 0000 0000 0003", "Laura Exemple", "600100003", "laura3@example.test", "Avinguda Exemple, 3", "Barcelona", "08003"),
+            arrayOf("Restaurante Mirador Test", "Mirador Restauració Test SL", "BTEST0004", "ES00 0000 0000 0000 0000 0004", "Pau Simulat", "600100004", "pau4@example.test", "Carrer Fictici, 4", "Barcelona", "08004"),
+            arrayOf("Bodega Norte Test", "Distribucions Nord Test SL", "BTEST0005", "ES00 0000 0000 0000 0000 0005", "Clara Demo", "600100005", "clara5@example.test", "Passeig de Mostra, 5", "Barcelona", "08005"),
+            arrayOf("Hotel Plaza Test", "Allotjaments Plaza Test SL", "BTEST0006", "ES00 0000 0000 0000 0000 0006", "Marc Prova", "600100006", "marc6@example.test", "Plaça de Prova, 6", "Barcelona", "08006"),
+            arrayOf("Pastelería Dulce Test", "Dolços Test SL", "BTEST0007", "ES00 0000 0000 0000 0000 0007", "Núria Mostra", "600100007", "nuria7@example.test", "Carrer Dolç de Prova, 7", "Barcelona", "08007"),
+            arrayOf("Mercado Río Test", "Mercat Riu Test SL", "BTEST0008", "ES00 0000 0000 0000 0000 0008", "Sergi Exemple", "600100008", "sergi8@example.test", "Rambla de Prova, 8", "Barcelona", "08008"),
+            arrayOf("Pizzería Roma Test", "Roma Pizza Test SL", "BTEST0009", "ES00 0000 0000 0000 0000 0009", "Anna Simulada", "600100009", "anna9@example.test", "Carrer Roma Test, 9", "Barcelona", "08009"),
+            arrayOf("Casa Gourmet Test", "Gourmet Casa Test SL", "BTEST0010", "ES00 0000 0000 0000 0000 0010", "David Demo", "600100010", "david10@example.test", "Carrer Gourmet Test, 10", "Barcelona", "08010"),
+            arrayOf("Cafè Rambla Test", "Rambla Cafè Test SL", "BTEST0011", "ES00 0000 0000 0000 0000 0011", "Irene Prova", "600100011", "irene11@example.test", "Rambla Fictícia, 11", "Barcelona", "08011"),
+            arrayOf("Tienda Delicias Test", "Delícies Comercial Test SL", "BTEST0012", "ES00 0000 0000 0000 0000 0012", "Oriol Mostra", "600100012", "oriol12@example.test", "Carrer Delícies Test, 12", "Barcelona", "08012")
+        )
+
+        testClients.forEachIndexed { index, row ->
+            db.insert("clients", null, ContentValues().apply {
+                put("name", row[0])
+                put("business_name", row[1])
+                put("nif", row[2])
+                put("bank_account", row[3])
+                put("contact_person", row[4])
+                put("phone", row[5])
+                put("email", row[6])
+                put("address", row[7])
+                put("city", row[8])
+                put("postal_code", row[9])
+                put("observations", "DATOS DE PRUEBA · Cliente ficticio " + (index + 1))
+                put("is_prospect", 0)
+            })
+        }
     }
 
     fun clients(): List<Client> = parties(false)
@@ -413,6 +464,8 @@ class CrmDb(context: Context) : SQLiteOpenHelper(context, "agenda_comercial.db",
             ContentValues().apply {
                 put("status", "REALIZADA")
                 put("completed_at", System.currentTimeMillis())
+                val clientId = visit(id)?.clientId
+                put("was_prospect_at_completion", if (clientId != null && client(clientId)?.isProspect == true) 1 else 0)
             },
             "id=?",
             arrayOf(id.toString())
@@ -431,6 +484,7 @@ class CrmDb(context: Context) : SQLiteOpenHelper(context, "agenda_comercial.db",
         val values = ContentValues().apply {
             put("status", "REALIZADA")
             put("completed_at", now)
+            put("was_prospect_at_completion", if (client(clientId)?.isProspect == true) 1 else 0)
             put("conversation_summary", conversationSummary)
             put("needs", needs)
             put("commitments", commitments)
@@ -543,7 +597,12 @@ class CrmDb(context: Context) : SQLiteOpenHelper(context, "agenda_comercial.db",
             """
             SELECT v.id,v.client_id,c.name,c.contact_person,c.phone,v.purpose,
                    v.conversation_summary,v.needs,v.commitments,v.notes,v.completed_at,
-                   CASE WHEN LOWER(v.purpose) LIKE '%prospec%' THEN 1 ELSE 0 END
+                   CASE
+                       WHEN v.was_prospect_at_completion=1 THEN 1
+                       WHEN v.was_prospect_at_completion=0 THEN 0
+                       WHEN LOWER(v.purpose) LIKE '%prospec%' THEN 1
+                       ELSE 0
+                   END
             FROM visits v
             JOIN clients c ON c.id=v.client_id
             WHERE v.completed_at BETWEEN ? AND ?
