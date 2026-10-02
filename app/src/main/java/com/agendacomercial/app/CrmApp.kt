@@ -19,6 +19,7 @@ import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.input.KeyboardType
@@ -69,8 +70,8 @@ fun CrmApp(vm: AppViewModel) {
                                 vm.refresh()
                                 screen = Screen.Clients
                             },
-                            icon = { Text("C") },
-                            label = { Text("Clientes") }
+                            icon = { Text("C", color = ClientGreen) },
+                            label = { Text("Clientes", color = ClientGreen) }
                         )
                         NavigationBarItem(
                             selected = screen is Screen.Prospects,
@@ -78,8 +79,8 @@ fun CrmApp(vm: AppViewModel) {
                                 vm.refresh()
                                 screen = Screen.Prospects
                             },
-                            icon = { Text("P") },
-                            label = { Text("Prospecciones") }
+                            icon = { Text("P", color = ProspectBlue) },
+                            label = { Text("Prospecciones", color = ProspectBlue) }
                         )
                     }
                 }
@@ -191,31 +192,26 @@ private fun WeeklyAgendaScreen(vm: AppViewModel, open: (Long, Long) -> Unit) {
         TopAppBar(title = { Text("Agenda semanal") })
 
         Row(
-            Modifier.padding(horizontal = 12.dp),
-            horizontalArrangement = Arrangement.spacedBy(6.dp)
+            Modifier
+                .fillMaxWidth()
+                .padding(horizontal = 8.dp, vertical = 2.dp),
+            horizontalArrangement = Arrangement.SpaceBetween
         ) {
-            OutlinedButton(
-                onClick = { weekOffset-- },
-                modifier = Modifier.weight(1f)
-            ) { Text("< Semana") }
+            IconButton(onClick = { weekOffset-- }) {
+                Text("‹", style = MaterialTheme.typography.headlineMedium)
+            }
 
-            OutlinedButton(
-                onClick = { weekOffset = 0 },
-                modifier = Modifier.weight(1f)
-            ) { Text("Esta semana") }
+            Text(
+                weekRangeLabel(start),
+                style = MaterialTheme.typography.titleMedium,
+                fontWeight = FontWeight.Bold,
+                modifier = Modifier.padding(top = 12.dp)
+            )
 
-            OutlinedButton(
-                onClick = { weekOffset++ },
-                modifier = Modifier.weight(1f)
-            ) { Text("Semana >") }
+            IconButton(onClick = { weekOffset++ }) {
+                Text("›", style = MaterialTheme.typography.headlineMedium)
+            }
         }
-
-        Text(
-            weekRangeLabel(start),
-            style = MaterialTheme.typography.titleMedium,
-            fontWeight = FontWeight.Bold,
-            modifier = Modifier.padding(16.dp)
-        )
 
         LazyRow(
             contentPadding = PaddingValues(horizontal = 12.dp, vertical = 4.dp),
@@ -247,13 +243,26 @@ private fun WeeklyAgendaScreen(vm: AppViewModel, open: (Long, Long) -> Unit) {
                             Surface(
                                 tonalElevation = 2.dp,
                                 shape = MaterialTheme.shapes.small,
+                                color = partyContainerColor(visit.isProspect),
                                 modifier = Modifier
                                     .fillMaxWidth()
                                     .clickable { open(visit.clientId, visit.id) }
                             ) {
                                 Column(Modifier.padding(10.dp)) {
-                                    Text(timeOnly(visit.scheduledAt), fontWeight = FontWeight.Bold)
-                                    Text(visit.clientName)
+                                    Text(
+                                        timeOnly(visit.scheduledAt),
+                                        fontWeight = FontWeight.Bold,
+                                        color = partyAccentColor(visit.isProspect)
+                                    )
+                                    Text(
+                                        visit.clientName,
+                                        fontWeight = FontWeight.SemiBold
+                                    )
+                                    Text(
+                                        if (visit.isProspect) "Prospección" else "Cliente",
+                                        color = partyAccentColor(visit.isProspect),
+                                        style = MaterialTheme.typography.labelSmall
+                                    )
                                     Text(
                                         visit.purpose,
                                         style = MaterialTheme.typography.bodySmall
@@ -296,7 +305,7 @@ private fun PartyListScreen(
     var query by remember { mutableStateOf("") }
 
     val list = parties.filter {
-        query.isBlank() || listOf(it.name, it.businessName, it.city, it.phone).any { value ->
+        query.isBlank() || listOf(it.name, it.businessName, it.contactPerson, it.city, it.phone).any { value ->
             value.contains(query, ignoreCase = true)
         }
     }
@@ -325,24 +334,30 @@ private fun PartyListScreen(
             }
 
             items(list, key = { it.id }) { party ->
-                Card(Modifier.fillMaxWidth().clickable { onOpen(party.id) }) {
+                Card(
+                    modifier = Modifier.fillMaxWidth().clickable { onOpen(party.id) },
+                    colors = CardDefaults.cardColors(
+                        containerColor = partyContainerColor(party.isProspect)
+                    )
+                ) {
                     Column(Modifier.padding(16.dp)) {
                         Text(
                             party.businessName.ifBlank { party.name },
+                            fontWeight = FontWeight.Bold,
+                            color = partyAccentColor(party.isProspect)
+                        )
+                        Text(
+                            "Contacto: " + party.contactPerson.ifBlank { party.name }
+                        )
+                        Text(
+                            "Teléfono: " + party.phone.ifBlank { "Sin teléfono" }
+                        )
+                        Text(
+                            if (party.isProspect) "Prospección" else "Cliente",
+                            color = partyAccentColor(party.isProspect),
+                            style = MaterialTheme.typography.labelMedium,
                             fontWeight = FontWeight.Bold
                         )
-                        if (party.businessName.isNotBlank()) Text(party.name)
-                        Text(
-                            listOf(party.address, party.city)
-                                .filter(String::isNotBlank)
-                                .joinToString(", ")
-                        )
-                        if (party.isProspect) {
-                            Text(
-                                "Prospección",
-                                style = MaterialTheme.typography.labelMedium
-                            )
-                        }
                     }
                 }
             }
@@ -375,7 +390,8 @@ private fun PartyDetailScreen(
             TopAppBar(
                 title = {
                     Text(
-                        if (party.isProspect) "Prospección" else party.businessName.ifBlank { party.name }
+                        if (party.isProspect) "Prospección" else party.businessName.ifBlank { party.name },
+                        color = partyAccentColor(party.isProspect)
                     )
                 },
                 navigationIcon = { TextButton(onClick = back) { Text("<") } },
@@ -389,7 +405,8 @@ private fun PartyDetailScreen(
                 Text(
                     party.businessName.ifBlank { party.name },
                     style = MaterialTheme.typography.titleLarge,
-                    fontWeight = FontWeight.Bold
+                    fontWeight = FontWeight.Bold,
+                    color = partyAccentColor(party.isProspect)
                 )
                 if (party.businessName.isNotBlank()) Text(party.name)
 
@@ -547,25 +564,38 @@ private fun BeforeVisitScreen(
     LazyColumn(verticalArrangement = Arrangement.spacedBy(10.dp)) {
         item {
             TopAppBar(
-                title = { Text(if (party.isProspect) "Antes de prospectar" else "Antes de entrar") },
+                title = {
+                    Text(
+                        if (party.isProspect) "Antes de prospectar" else "Antes de entrar",
+                        color = partyAccentColor(party.isProspect)
+                    )
+                },
                 navigationIcon = { TextButton(onClick = back) { Text("<") } },
                 actions = { TextButton(onClick = openParty) { Text("Ficha") } }
             )
         }
 
         item {
-            InfoCard {
-                Text(
-                    party.businessName.ifBlank { party.name },
-                    style = MaterialTheme.typography.titleLarge,
-                    fontWeight = FontWeight.Bold
+            Card(
+                Modifier.padding(horizontal = 16.dp).fillMaxWidth(),
+                colors = CardDefaults.cardColors(
+                    containerColor = partyContainerColor(party.isProspect)
                 )
+            ) {
+                Column(Modifier.padding(14.dp)) {
+                    Text(
+                        party.businessName.ifBlank { party.name },
+                        style = MaterialTheme.typography.titleLarge,
+                        fontWeight = FontWeight.Bold,
+                        color = partyAccentColor(party.isProspect)
+                    )
                 if (party.businessName.isNotBlank()) Text(party.name)
                 if (appointment != null) {
                     Spacer(Modifier.height(6.dp))
                     Text("Cita: " + dateTime(appointment.scheduledAt), fontWeight = FontWeight.Bold)
                     Text("Motivo: " + appointment.purpose)
                     if (appointment.notes.isNotBlank()) Text("Preparación: " + appointment.notes)
+                }
                 }
             }
         }
@@ -690,7 +720,12 @@ private fun InVisitScreen(
 
     Column(Modifier.fillMaxSize()) {
         TopAppBar(
-            title = { Text(if (party.isProspect) "Estoy prospectando" else "Estoy con el cliente") },
+            title = {
+                Text(
+                    if (party.isProspect) "Estoy prospectando" else "Estoy con el cliente",
+                    color = partyAccentColor(party.isProspect)
+                )
+            },
             navigationIcon = { TextButton(onClick = back) { Text("<") } }
         )
 
@@ -702,6 +737,12 @@ private fun InVisitScreen(
                 Text(
                     party.businessName.ifBlank { party.name },
                     style = MaterialTheme.typography.titleLarge,
+                    fontWeight = FontWeight.Bold,
+                    color = partyAccentColor(party.isProspect)
+                )
+                Text(
+                    if (party.isProspect) "Prospección" else "Cliente",
+                    color = partyAccentColor(party.isProspect),
                     fontWeight = FontWeight.Bold
                 )
                 Text("Puedes escribir o pulsar Voz para dictar cada campo.")
@@ -822,7 +863,8 @@ private fun PartyFormScreen(
             title = {
                 Text(
                     if (editing) "Editar $noun"
-                    else if (isProspect) "Nueva prospección" else "Nuevo cliente"
+                    else if (isProspect) "Nueva prospección" else "Nuevo cliente",
+                    color = partyAccentColor(isProspect)
                 )
             },
             navigationIcon = { TextButton(onClick = back) { Text("<") } }
@@ -958,7 +1000,12 @@ private fun VisitScheduleScreen(vm: AppViewModel, clientId: Long, done: () -> Un
 
     Column(Modifier.fillMaxSize()) {
         TopAppBar(
-            title = { Text(if (party?.isProspect == true) "Programar prospección" else "Programar visita") },
+            title = {
+                Text(
+                    if (party?.isProspect == true) "Programar prospección" else "Programar visita",
+                    color = partyAccentColor(party?.isProspect == true)
+                )
+            },
             navigationIcon = { TextButton(onClick = done) { Text("<") } }
         )
 
@@ -1011,7 +1058,12 @@ private fun OrderScreen(vm: AppViewModel, id: Long, done: () -> Unit) {
 
     Column {
         TopAppBar(
-            title = { Text("Nuevo pedido") },
+            title = {
+                Text(
+                    "Nuevo pedido",
+                    color = partyAccentColor(party?.isProspect == true)
+                )
+            },
             navigationIcon = { TextButton(onClick = done) { Text("<") } }
         )
 
@@ -1189,6 +1241,17 @@ private fun dateTime(value: Long) =
 
 private fun date(value: Long) =
     DateFormat.getDateInstance(DateFormat.SHORT).format(Date(value))
+
+private val ProspectBlue = Color(0xFF1565C0)
+private val ProspectBlueSoft = Color(0xFFE3F2FD)
+private val ClientGreen = Color(0xFF2E7D32)
+private val ClientGreenSoft = Color(0xFFE8F5E9)
+
+private fun partyAccentColor(isProspect: Boolean) =
+    if (isProspect) ProspectBlue else ClientGreen
+
+private fun partyContainerColor(isProspect: Boolean) =
+    if (isProspect) ProspectBlueSoft else ClientGreenSoft
 
 private fun money(value: Double) =
     NumberFormat.getCurrencyInstance(Locale("es", "ES")).format(value)
