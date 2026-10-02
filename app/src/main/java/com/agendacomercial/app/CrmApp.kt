@@ -4,12 +4,15 @@ import android.app.Activity
 import android.app.DatePickerDialog
 import android.app.TimePickerDialog
 import android.content.ActivityNotFoundException
+import android.content.Context
 import android.content.Intent
+import android.graphics.BitmapFactory
 import android.net.Uri
 import android.speech.RecognizerIntent
 import android.widget.Toast
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.contract.ActivityResultContracts
+import androidx.compose.foundation.Image
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.lazy.LazyColumn
@@ -18,12 +21,17 @@ import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
+import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.asImageBitmap
+import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.input.KeyboardType
 import androidx.compose.ui.unit.dp
+import androidx.core.content.FileProvider
+import java.io.File
 import java.text.DateFormat
 import java.text.NumberFormat
 import java.text.SimpleDateFormat
@@ -35,6 +43,7 @@ private sealed class Screen {
     data object Agenda : Screen()
     data object Clients : Screen()
     data object Prospects : Screen()
+    data object Summary : Screen()
     data class NewParty(val prospect: Boolean) : Screen()
     data class Detail(val id: Long) : Screen()
     data class EditParty(val id: Long) : Screen()
@@ -49,7 +58,11 @@ fun CrmApp(vm: AppViewModel) {
     var screen by remember { mutableStateOf<Screen>(Screen.Agenda) }
 
     MaterialTheme {
-        val root = screen is Screen.Agenda || screen is Screen.Clients || screen is Screen.Prospects
+        val root =
+            screen is Screen.Agenda ||
+            screen is Screen.Clients ||
+            screen is Screen.Prospects ||
+            screen is Screen.Summary
 
         Scaffold(
             bottomBar = {
@@ -82,6 +95,15 @@ fun CrmApp(vm: AppViewModel) {
                             icon = { Text("P", color = ProspectBlue) },
                             label = { Text("Prospecciones", color = ProspectBlue) }
                         )
+                        NavigationBarItem(
+                            selected = screen is Screen.Summary,
+                            onClick = {
+                                vm.refresh()
+                                screen = Screen.Summary
+                            },
+                            icon = { Text("R") },
+                            label = { Text("Resumen") }
+                        )
                     }
                 }
             }
@@ -110,6 +132,8 @@ fun CrmApp(vm: AppViewModel) {
                         onOpen = { screen = Screen.Detail(it) }
                     )
 
+                    Screen.Summary -> DailySummaryScreen(vm)
+
                     is Screen.NewParty -> PartyFormScreen(
                         vm = vm,
                         party = null,
@@ -124,7 +148,9 @@ fun CrmApp(vm: AppViewModel) {
                         vm = vm,
                         id = s.id,
                         back = {
-                            screen = if (vm.client(s.id)?.isProspect == true) Screen.Prospects else Screen.Clients
+                            screen =
+                                if (vm.client(s.id)?.isProspect == true) Screen.Prospects
+                                else Screen.Clients
                         },
                         edit = { screen = Screen.EditParty(s.id) },
                         before = { screen = Screen.BeforeVisit(s.id, null) },
@@ -180,12 +206,7 @@ fun CrmApp(vm: AppViewModel) {
 private fun WeeklyAgendaScreen(vm: AppViewModel, open: (Long, Long) -> Unit) {
     var weekOffset by remember { mutableIntStateOf(0) }
     val start = remember(weekOffset) { weekStart(weekOffset) }
-    val end = remember(start) {
-        Calendar.getInstance().apply {
-            timeInMillis = start
-            add(Calendar.DAY_OF_YEAR, 7)
-        }.timeInMillis
-    }
+    val end = remember(start) { dayStart(start, 7) }
     val visits = vm.agenda.filter { it.scheduledAt in start until end }
 
     Column(Modifier.fillMaxSize()) {
@@ -254,24 +275,16 @@ private fun WeeklyAgendaScreen(vm: AppViewModel, open: (Long, Long) -> Unit) {
                                         fontWeight = FontWeight.Bold,
                                         color = partyAccentColor(visit.isProspect)
                                     )
-                                    Text(
-                                        visit.clientName,
-                                        fontWeight = FontWeight.SemiBold
-                                    )
+                                    Text(visit.clientName, fontWeight = FontWeight.SemiBold)
                                     Text(
                                         if (visit.isProspect) "Prospección" else "Cliente",
                                         color = partyAccentColor(visit.isProspect),
                                         style = MaterialTheme.typography.labelSmall
                                     )
-                                    Text(
-                                        visit.purpose,
-                                        style = MaterialTheme.typography.bodySmall
-                                    )
+                                    Text(visit.purpose, style = MaterialTheme.typography.bodySmall)
+
                                     if (visit.status == "REALIZADA") {
-                                        Text(
-                                            "Realizada",
-                                            style = MaterialTheme.typography.labelSmall
-                                        )
+                                        Text("Realizada", style = MaterialTheme.typography.labelSmall)
                                     }
                                 }
                             }
@@ -281,12 +294,10 @@ private fun WeeklyAgendaScreen(vm: AppViewModel, open: (Long, Long) -> Unit) {
             }
         }
 
-        Spacer(Modifier.height(8.dp))
-
         if (visits.isEmpty()) {
             Text(
                 "No hay visitas programadas esta semana.",
-                modifier = Modifier.padding(horizontal = 16.dp)
+                modifier = Modifier.padding(16.dp)
             )
         }
     }
@@ -305,17 +316,16 @@ private fun PartyListScreen(
     var query by remember { mutableStateOf("") }
 
     val list = parties.filter {
-        query.isBlank() || listOf(it.name, it.businessName, it.contactPerson, it.city, it.phone).any { value ->
-            value.contains(query, ignoreCase = true)
-        }
+        query.isBlank() ||
+            listOf(it.name, it.businessName, it.contactPerson, it.phone, it.nif).any { value ->
+                value.contains(query, ignoreCase = true)
+            }
     }
 
     Column(Modifier.fillMaxSize()) {
         TopAppBar(
             title = { Text(title) },
-            actions = {
-                TextButton(onClick = onAdd) { Text(addLabel) }
-            }
+            actions = { TextButton(onClick = onAdd) { Text(addLabel) } }
         )
 
         OutlinedTextField(
@@ -342,21 +352,16 @@ private fun PartyListScreen(
                 ) {
                     Column(Modifier.padding(16.dp)) {
                         Text(
-                            party.businessName.ifBlank { party.name },
+                            party.name,
                             fontWeight = FontWeight.Bold,
-                            color = partyAccentColor(party.isProspect)
+                            color = partyAccentColor(party.isProspect),
+                            style = MaterialTheme.typography.titleMedium
                         )
                         Text(
-                            "Contacto: " + party.contactPerson.ifBlank { party.name }
+                            "Contacto: " + party.contactPerson.ifBlank { "Sin contacto" }
                         )
                         Text(
                             "Teléfono: " + party.phone.ifBlank { "Sin teléfono" }
-                        )
-                        Text(
-                            if (party.isProspect) "Prospección" else "Cliente",
-                            color = partyAccentColor(party.isProspect),
-                            style = MaterialTheme.typography.labelMedium,
-                            fontWeight = FontWeight.Bold
                         )
                     }
                 }
@@ -379,37 +384,102 @@ private fun PartyDetailScreen(
     convert: () -> Unit
 ) {
     var reload by remember { mutableIntStateOf(0) }
+    var photoVersion by remember { mutableIntStateOf(0) }
+    var pendingPhotoPath by remember(id) { mutableStateOf<String?>(null) }
+
     val party = remember(id, reload, vm.clients, vm.prospects) { vm.client(id) } ?: return
     val visits = remember(id, reload) { vm.visits(id) }
     val orders = remember(id, reload) { vm.orders(id) }
     val consumption = remember(id, reload) { vm.consumption(id) }
     val context = LocalContext.current
 
+    val photoLauncher = rememberLauncherForActivityResult(
+        contract = ActivityResultContracts.TakePicture()
+    ) { success ->
+        val path = pendingPhotoPath
+        if (success && path != null) {
+            vm.updatePhoto(id, path)
+            photoVersion++
+            reload++
+        } else if (path != null) {
+            File(path).delete()
+        }
+        pendingPhotoPath = null
+    }
+
+    fun takePhoto() {
+        val file = createClientPhotoFile(context, id)
+        pendingPhotoPath = file.absolutePath
+        val uri = FileProvider.getUriForFile(
+            context,
+            context.packageName + ".fileprovider",
+            file
+        )
+        photoLauncher.launch(uri)
+    }
+
     LazyColumn(verticalArrangement = Arrangement.spacedBy(10.dp)) {
         item {
             TopAppBar(
                 title = {
                     Text(
-                        if (party.isProspect) "Prospección" else party.businessName.ifBlank { party.name },
+                        party.name,
                         color = partyAccentColor(party.isProspect)
                     )
                 },
                 navigationIcon = { TextButton(onClick = back) { Text("<") } },
                 actions = { TextButton(onClick = edit) { Text("Editar") } }
             )
+        }
 
+        item {
+            Row(
+                Modifier.padding(horizontal = 16.dp),
+                horizontalArrangement = Arrangement.spacedBy(14.dp),
+                verticalAlignment = Alignment.Top
+            ) {
+                LocalPhotoBox(
+                    photoPath = party.photoPath,
+                    version = photoVersion,
+                    isProspect = party.isProspect,
+                    onClick = { takePhoto() }
+                )
+
+                Column(
+                    Modifier.weight(1f),
+                    verticalArrangement = Arrangement.spacedBy(4.dp)
+                ) {
+                    Text(
+                        if (party.isProspect) "Prospección" else "Cliente",
+                        color = partyAccentColor(party.isProspect),
+                        fontWeight = FontWeight.Bold
+                    )
+
+                    Text(
+                        party.name,
+                        style = MaterialTheme.typography.titleLarge,
+                        fontWeight = FontWeight.Bold,
+                        color = partyAccentColor(party.isProspect)
+                    )
+
+                    if (party.businessName.isNotBlank()) {
+                        Text("Empresa: " + party.businessName)
+                    }
+                    if (party.nif.isNotBlank()) {
+                        Text("NIF: " + party.nif)
+                    }
+                    if (party.bankAccount.isNotBlank()) {
+                        Text("Cuenta: " + party.bankAccount)
+                    }
+                }
+            }
+        }
+
+        item {
             Column(
                 Modifier.padding(horizontal = 16.dp),
                 verticalArrangement = Arrangement.spacedBy(5.dp)
             ) {
-                Text(
-                    party.businessName.ifBlank { party.name },
-                    style = MaterialTheme.typography.titleLarge,
-                    fontWeight = FontWeight.Bold,
-                    color = partyAccentColor(party.isProspect)
-                )
-                if (party.businessName.isNotBlank()) Text(party.name)
-
                 Text(
                     listOf(party.address, party.postalCode, party.city)
                         .filter(String::isNotBlank)
@@ -477,55 +547,85 @@ private fun PartyDetailScreen(
             }
         }
 
-        item { Heading(if (party.isProspect) "Actividad de prospección" else "Productos que consume") }
-
         if (!party.isProspect) {
+            item { Heading("Productos que consume") }
+
             if (consumption.isEmpty()) {
-                item { Text("Todavía no hay consumo registrado.", Modifier.padding(horizontal = 16.dp)) }
+                item {
+                    Text(
+                        "Todavía no hay consumo registrado.",
+                        Modifier.padding(horizontal = 16.dp)
+                    )
+                }
             }
+
             items(consumption) { item ->
                 InfoCard {
                     Text(item.name, fontWeight = FontWeight.Bold)
                     Text("Unidades históricas: " + item.units)
-                    Text("Último pedido: " + date(item.lastOrderedAt) + " · " + money(item.lastPrice))
+                    Text(
+                        "Último pedido: " +
+                            date(item.lastOrderedAt) +
+                            " · " +
+                            money(item.lastPrice)
+                    )
                 }
             }
 
             item { Heading("Últimos pedidos") }
 
             if (orders.isEmpty()) {
-                item { Text("Sin pedidos todavía.", Modifier.padding(horizontal = 16.dp)) }
+                item {
+                    Text(
+                        "Sin pedidos todavía.",
+                        Modifier.padding(horizontal = 16.dp)
+                    )
+                }
             }
 
             items(orders, key = { it.id }) { item ->
                 InfoCard {
-                    Text(date(item.createdAt) + " · " + money(item.total), fontWeight = FontWeight.Bold)
+                    Text(
+                        date(item.createdAt) + " · " + money(item.total),
+                        fontWeight = FontWeight.Bold
+                    )
                     Text(item.status)
-                }
-            }
-        } else {
-            item {
-                InfoCard {
-                    Text("Si haces un pedido desde esta ficha, pasará automáticamente a Clientes.")
-                    Text("También puedes usar el botón “Prospección conseguida” cuando ya sea cliente.")
                 }
             }
         }
 
-        item { Heading(if (party.isProspect) "Historial de prospecciones" else "Historial de visitas") }
+        item {
+            Heading(
+                if (party.isProspect) "Historial de prospecciones"
+                else "Historial de visitas"
+            )
+        }
 
         if (visits.isEmpty()) {
-            item { Text("Sin actividad registrada.", Modifier.padding(horizontal = 16.dp)) }
+            item {
+                Text(
+                    "Sin actividad registrada.",
+                    Modifier.padding(horizontal = 16.dp)
+                )
+            }
         }
 
         items(visits, key = { it.id }) { item ->
             InfoCard {
                 Text(dateTime(item.scheduledAt), fontWeight = FontWeight.Bold)
                 Text(item.status + " · " + item.purpose)
-                if (item.conversationSummary.isNotBlank()) Text("Resumen: " + item.conversationSummary)
-                if (item.needs.isNotBlank()) Text("Necesidades: " + item.needs)
-                if (item.commitments.isNotBlank()) Text("Próximos pasos: " + item.commitments)
-                if (item.notes.isNotBlank()) Text("Notas: " + item.notes)
+                if (item.conversationSummary.isNotBlank()) {
+                    Text("Resumen: " + item.conversationSummary)
+                }
+                if (item.needs.isNotBlank()) {
+                    Text("Necesidades: " + item.needs)
+                }
+                if (item.commitments.isNotBlank()) {
+                    Text("Próximos pasos: " + item.commitments)
+                }
+                if (item.notes.isNotBlank()) {
+                    Text("Notas: " + item.notes)
+                }
 
                 if (item.status != "REALIZADA") {
                     TextButton(
@@ -544,6 +644,202 @@ private fun PartyDetailScreen(
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
+private fun DailySummaryScreen(vm: AppViewModel) {
+    val range = remember { todayRange() }
+    val visits = remember(vm.clients, vm.prospects, vm.agenda) {
+        vm.dailyVisits(range.first, range.second)
+    }
+    val orders = remember(vm.clients, vm.prospects, vm.agenda) {
+        vm.dailyOrders(range.first, range.second)
+    }
+
+    val prospections = visits.filter { it.isProspection }
+    val clientVisits = visits.filterNot { it.isProspection }
+    val orderTotal = orders.sumOf { it.total }
+
+    Column(Modifier.fillMaxSize()) {
+        TopAppBar(title = { Text("Resumen del día") })
+
+        LazyColumn(
+            contentPadding = PaddingValues(16.dp),
+            verticalArrangement = Arrangement.spacedBy(10.dp)
+        ) {
+            item {
+                Text(
+                    fullDate(range.first),
+                    style = MaterialTheme.typography.titleLarge,
+                    fontWeight = FontWeight.Bold
+                )
+            }
+
+            item {
+                Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                    SummaryMetric(
+                        title = "Prospecciones",
+                        value = prospections.size.toString(),
+                        color = ProspectBlueSoft,
+                        modifier = Modifier.weight(1f)
+                    )
+                    SummaryMetric(
+                        title = "Visitas",
+                        value = clientVisits.size.toString(),
+                        color = ClientGreenSoft,
+                        modifier = Modifier.weight(1f)
+                    )
+                    SummaryMetric(
+                        title = "Pedidos",
+                        value = orders.size.toString(),
+                        color = ClientGreenSoft,
+                        modifier = Modifier.weight(1f)
+                    )
+                }
+            }
+
+            item {
+                Card {
+                    Column(Modifier.padding(14.dp)) {
+                        Text("Venta del día", fontWeight = FontWeight.Bold)
+                        Text(
+                            money(orderTotal),
+                            style = MaterialTheme.typography.headlineSmall,
+                            color = ClientGreen
+                        )
+                    }
+                }
+            }
+
+            item { HeadingNoPadding("Prospecciones realizadas") }
+
+            if (prospections.isEmpty()) {
+                item { Text("No hay prospecciones realizadas hoy.") }
+            }
+
+            items(prospections, key = { "p" + it.id }) { activity ->
+                ActivityCard(
+                    activity = activity,
+                    isProspection = true
+                )
+            }
+
+            item { HeadingNoPadding("Visitas a clientes") }
+
+            if (clientVisits.isEmpty()) {
+                item { Text("No hay visitas a clientes realizadas hoy.") }
+            }
+
+            items(clientVisits, key = { "v" + it.id }) { activity ->
+                ActivityCard(
+                    activity = activity,
+                    isProspection = false
+                )
+            }
+
+            item { HeadingNoPadding("Pedidos del día") }
+
+            if (orders.isEmpty()) {
+                item { Text("No hay pedidos creados hoy.") }
+            }
+
+            items(orders, key = { "o" + it.id }) { order ->
+                Card(
+                    colors = CardDefaults.cardColors(
+                        containerColor = ClientGreenSoft
+                    )
+                ) {
+                    Column(
+                        Modifier.padding(14.dp),
+                        verticalArrangement = Arrangement.spacedBy(3.dp)
+                    ) {
+                        Text(
+                            timeOnly(order.createdAt) + " · " + order.localName,
+                            fontWeight = FontWeight.Bold,
+                            color = ClientGreen
+                        )
+                        if (order.contactPerson.isNotBlank()) {
+                            Text("Contacto: " + order.contactPerson)
+                        }
+                        if (order.phone.isNotBlank()) {
+                            Text("Teléfono: " + order.phone)
+                        }
+                        Text(
+                            "Pedido: " + money(order.total),
+                            fontWeight = FontWeight.Bold
+                        )
+                        Text(order.status)
+                    }
+                }
+            }
+
+            item { Spacer(Modifier.height(20.dp)) }
+        }
+    }
+}
+
+@Composable
+private fun SummaryMetric(
+    title: String,
+    value: String,
+    color: Color,
+    modifier: Modifier = Modifier
+) {
+    Card(
+        modifier = modifier,
+        colors = CardDefaults.cardColors(containerColor = color)
+    ) {
+        Column(
+            Modifier.padding(10.dp),
+            horizontalAlignment = Alignment.CenterHorizontally
+        ) {
+            Text(value, style = MaterialTheme.typography.headlineMedium)
+            Text(title, style = MaterialTheme.typography.labelSmall)
+        }
+    }
+}
+
+@Composable
+private fun ActivityCard(
+    activity: DailyVisitActivity,
+    isProspection: Boolean
+) {
+    Card(
+        colors = CardDefaults.cardColors(
+            containerColor = partyContainerColor(isProspection)
+        )
+    ) {
+        Column(
+            Modifier.padding(14.dp),
+            verticalArrangement = Arrangement.spacedBy(3.dp)
+        ) {
+            Text(
+                timeOnly(activity.completedAt) + " · " + activity.localName,
+                fontWeight = FontWeight.Bold,
+                color = partyAccentColor(isProspection)
+            )
+            if (activity.contactPerson.isNotBlank()) {
+                Text("Contacto: " + activity.contactPerson)
+            }
+            if (activity.phone.isNotBlank()) {
+                Text("Teléfono: " + activity.phone)
+            }
+            Text("Motivo: " + activity.purpose)
+            if (activity.conversationSummary.isNotBlank()) {
+                Text("Resumen: " + activity.conversationSummary)
+            }
+            if (activity.needs.isNotBlank()) {
+                Text("Necesidades: " + activity.needs)
+            }
+            if (activity.commitments.isNotBlank()) {
+                Text("Próximos pasos: " + activity.commitments)
+            }
+            if (activity.notes.isNotBlank()) {
+                Text("Notas: " + activity.notes)
+            }
+        }
+    }
+}
+
+@OptIn(ExperimentalMaterial3Api::class)
+@Composable
 private fun BeforeVisitScreen(
     vm: AppViewModel,
     clientId: Long,
@@ -552,12 +848,17 @@ private fun BeforeVisitScreen(
     openParty: () -> Unit,
     startVisit: () -> Unit
 ) {
-    val party = remember(clientId, vm.clients, vm.prospects) { vm.client(clientId) } ?: return
+    val party = remember(clientId, vm.clients, vm.prospects) {
+        vm.client(clientId)
+    } ?: return
+
     val appointment = remember(visitId) { visitId?.let { vm.visit(it) } }
     val visits = remember(clientId) { vm.visits(clientId) }
     val orders = remember(clientId) { vm.orders(clientId) }
     val consumption = remember(clientId) { vm.consumption(clientId) }
-    val previousVisit = visits.firstOrNull { it.status == "REALIZADA" && it.id != visitId }
+    val previousVisit = visits.firstOrNull {
+        it.status == "REALIZADA" && it.id != visitId
+    }
     val lastOrder = orders.firstOrNull()
     val context = LocalContext.current
 
@@ -584,18 +885,28 @@ private fun BeforeVisitScreen(
             ) {
                 Column(Modifier.padding(14.dp)) {
                     Text(
-                        party.businessName.ifBlank { party.name },
+                        party.name,
                         style = MaterialTheme.typography.titleLarge,
                         fontWeight = FontWeight.Bold,
                         color = partyAccentColor(party.isProspect)
                     )
-                if (party.businessName.isNotBlank()) Text(party.name)
-                if (appointment != null) {
-                    Spacer(Modifier.height(6.dp))
-                    Text("Cita: " + dateTime(appointment.scheduledAt), fontWeight = FontWeight.Bold)
-                    Text("Motivo: " + appointment.purpose)
-                    if (appointment.notes.isNotBlank()) Text("Preparación: " + appointment.notes)
-                }
+                    if (party.businessName.isNotBlank()) {
+                        Text("Empresa: " + party.businessName)
+                    }
+                    if (party.nif.isNotBlank()) {
+                        Text("NIF: " + party.nif)
+                    }
+                    if (appointment != null) {
+                        Spacer(Modifier.height(6.dp))
+                        Text(
+                            "Cita: " + dateTime(appointment.scheduledAt),
+                            fontWeight = FontWeight.Bold
+                        )
+                        Text("Motivo: " + appointment.purpose)
+                        if (appointment.notes.isNotBlank()) {
+                            Text("Preparación: " + appointment.notes)
+                        }
+                    }
                 }
             }
         }
@@ -603,12 +914,17 @@ private fun BeforeVisitScreen(
         item {
             Heading("Datos rápidos")
             InfoCard {
-                if (party.contactPerson.isNotBlank()) Text("Contacto: " + party.contactPerson)
-                if (party.phone.isNotBlank()) Text("Teléfono: " + party.phone)
+                if (party.contactPerson.isNotBlank()) {
+                    Text("Contacto: " + party.contactPerson)
+                }
+                if (party.phone.isNotBlank()) {
+                    Text("Teléfono: " + party.phone)
+                }
                 Text(
-                    "Dirección: " + listOf(party.address, party.postalCode, party.city)
-                        .filter(String::isNotBlank)
-                        .joinToString(", ")
+                    "Dirección: " +
+                        listOf(party.address, party.postalCode, party.city)
+                            .filter(String::isNotBlank)
+                            .joinToString(", ")
                 )
                 if (party.observations.isNotBlank()) {
                     Text("Observaciones", fontWeight = FontWeight.Bold)
@@ -621,7 +937,11 @@ private fun BeforeVisitScreen(
             item { Heading("Lo que consume") }
 
             if (consumption.isEmpty()) {
-                item { InfoCard { Text("Todavía no hay productos consumidos registrados.") } }
+                item {
+                    InfoCard {
+                        Text("Todavía no hay productos consumidos registrados.")
+                    }
+                }
             } else {
                 items(consumption.take(5)) { item ->
                     InfoCard {
@@ -638,25 +958,44 @@ private fun BeforeVisitScreen(
                     if (lastOrder == null) {
                         Text("Todavía no hay pedidos.")
                     } else {
-                        Text(date(lastOrder.createdAt) + " · " + money(lastOrder.total), fontWeight = FontWeight.Bold)
+                        Text(
+                            date(lastOrder.createdAt) + " · " + money(lastOrder.total),
+                            fontWeight = FontWeight.Bold
+                        )
                         Text(lastOrder.status)
                     }
                 }
             }
         }
 
-        item { Heading(if (party.isProspect) "Última prospección" else "Última visita realizada") }
+        item {
+            Heading(
+                if (party.isProspect) "Última prospección"
+                else "Última visita realizada"
+            )
+        }
 
         item {
             InfoCard {
                 if (previousVisit == null) {
                     Text("No hay actividad anterior registrada.")
                 } else {
-                    Text(dateTime(previousVisit.scheduledAt), fontWeight = FontWeight.Bold)
-                    if (previousVisit.conversationSummary.isNotBlank()) Text("Resumen: " + previousVisit.conversationSummary)
-                    if (previousVisit.needs.isNotBlank()) Text("Necesidades: " + previousVisit.needs)
-                    if (previousVisit.commitments.isNotBlank()) Text("Próximos pasos: " + previousVisit.commitments)
-                    if (previousVisit.notes.isNotBlank()) Text("Notas: " + previousVisit.notes)
+                    Text(
+                        dateTime(previousVisit.scheduledAt),
+                        fontWeight = FontWeight.Bold
+                    )
+                    if (previousVisit.conversationSummary.isNotBlank()) {
+                        Text("Resumen: " + previousVisit.conversationSummary)
+                    }
+                    if (previousVisit.needs.isNotBlank()) {
+                        Text("Necesidades: " + previousVisit.needs)
+                    }
+                    if (previousVisit.commitments.isNotBlank()) {
+                        Text("Próximos pasos: " + previousVisit.commitments)
+                    }
+                    if (previousVisit.notes.isNotBlank()) {
+                        Text("Notas: " + previousVisit.notes)
+                    }
                 }
             }
         }
@@ -667,7 +1006,10 @@ private fun BeforeVisitScreen(
                 verticalArrangement = Arrangement.spacedBy(8.dp)
             ) {
                 Button(onClick = startVisit, modifier = Modifier.fillMaxWidth()) {
-                    Text(if (party.isProspect) "Empezar prospección" else "Estoy con el cliente")
+                    Text(
+                        if (party.isProspect) "Empezar prospección"
+                        else "Estoy con el cliente"
+                    )
                 }
 
                 Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
@@ -675,7 +1017,10 @@ private fun BeforeVisitScreen(
                         OutlinedButton(
                             onClick = {
                                 context.startActivity(
-                                    Intent(Intent.ACTION_DIAL, Uri.parse("tel:" + party.phone))
+                                    Intent(
+                                        Intent.ACTION_DIAL,
+                                        Uri.parse("tel:" + party.phone)
+                                    )
                                 )
                             },
                             modifier = Modifier.weight(1f)
@@ -687,7 +1032,10 @@ private fun BeforeVisitScreen(
                             onClick = {
                                 val place = Uri.encode(party.address + " " + party.city)
                                 context.startActivity(
-                                    Intent(Intent.ACTION_VIEW, Uri.parse("geo:0,0?q=" + place))
+                                    Intent(
+                                        Intent.ACTION_VIEW,
+                                        Uri.parse("geo:0,0?q=" + place)
+                                    )
                                 )
                             },
                             modifier = Modifier.weight(1f)
@@ -710,19 +1058,27 @@ private fun InVisitScreen(
     back: () -> Unit,
     saved: () -> Unit
 ) {
-    val party = remember(clientId, vm.clients, vm.prospects) { vm.client(clientId) } ?: return
+    val party = remember(clientId, vm.clients, vm.prospects) {
+        vm.client(clientId)
+    } ?: return
+
     val existing = remember(visitId) { visitId?.let { vm.visit(it) } }
 
-    var conversation by remember { mutableStateOf(existing?.conversationSummary ?: "") }
+    var conversation by remember {
+        mutableStateOf(existing?.conversationSummary ?: "")
+    }
     var needs by remember { mutableStateOf(existing?.needs ?: "") }
-    var commitments by remember { mutableStateOf(existing?.commitments ?: "") }
+    var commitments by remember {
+        mutableStateOf(existing?.commitments ?: "")
+    }
     var notes by remember { mutableStateOf(existing?.notes ?: "") }
 
     Column(Modifier.fillMaxSize()) {
         TopAppBar(
             title = {
                 Text(
-                    if (party.isProspect) "Estoy prospectando" else "Estoy con el cliente",
+                    if (party.isProspect) "Estoy prospectando"
+                    else "Estoy con el cliente",
                     color = partyAccentColor(party.isProspect)
                 )
             },
@@ -735,7 +1091,7 @@ private fun InVisitScreen(
         ) {
             item {
                 Text(
-                    party.businessName.ifBlank { party.name },
+                    party.name,
                     style = MaterialTheme.typography.titleLarge,
                     fontWeight = FontWeight.Bold,
                     color = partyAccentColor(party.isProspect)
@@ -804,7 +1160,10 @@ private fun InVisitScreen(
                     },
                     modifier = Modifier.fillMaxWidth()
                 ) {
-                    Text(if (party.isProspect) "Guardar prospección" else "Guardar visita y marcar realizada")
+                    Text(
+                        if (party.isProspect) "Guardar prospección"
+                        else "Guardar visita y marcar realizada"
+                    )
                 }
             }
 
@@ -845,14 +1204,24 @@ private fun PartyFormScreen(
     saved: (Long) -> Unit
 ) {
     var name by remember(party?.id) { mutableStateOf(party?.name ?: "") }
-    var business by remember(party?.id) { mutableStateOf(party?.businessName ?: "") }
-    var contact by remember(party?.id) { mutableStateOf(party?.contactPerson ?: "") }
+    var business by remember(party?.id) {
+        mutableStateOf(party?.businessName ?: "")
+    }
+    var nif by remember(party?.id) { mutableStateOf(party?.nif ?: "") }
+    var bankAccount by remember(party?.id) {
+        mutableStateOf(party?.bankAccount ?: "")
+    }
+    var contact by remember(party?.id) {
+        mutableStateOf(party?.contactPerson ?: "")
+    }
     var phone by remember(party?.id) { mutableStateOf(party?.phone ?: "") }
     var email by remember(party?.id) { mutableStateOf(party?.email ?: "") }
     var address by remember(party?.id) { mutableStateOf(party?.address ?: "") }
     var city by remember(party?.id) { mutableStateOf(party?.city ?: "") }
     var postal by remember(party?.id) { mutableStateOf(party?.postalCode ?: "") }
-    var notes by remember(party?.id) { mutableStateOf(party?.observations ?: "") }
+    var notes by remember(party?.id) {
+        mutableStateOf(party?.observations ?: "")
+    }
 
     val editing = party != null
     val isProspect = party?.isProspect ?: newIsProspect
@@ -863,7 +1232,8 @@ private fun PartyFormScreen(
             title = {
                 Text(
                     if (editing) "Editar $noun"
-                    else if (isProspect) "Nueva prospección" else "Nuevo cliente",
+                    else if (isProspect) "Nueva prospección"
+                    else "Nuevo cliente",
                     color = partyAccentColor(isProspect)
                 )
             },
@@ -874,14 +1244,73 @@ private fun PartyFormScreen(
             Modifier.padding(horizontal = 16.dp),
             verticalArrangement = Arrangement.spacedBy(8.dp)
         ) {
-            item { VoiceField("Nombre *", name, { name = it }) }
-            item { VoiceField("Empresa / establecimiento", business, { business = it }) }
-            item { VoiceField("Persona de contacto", contact, { contact = it }) }
-            item { VoiceField("Teléfono", phone, { phone = it }, keyboardType = KeyboardType.Phone) }
-            item { VoiceField("Email", email, { email = it }, keyboardType = KeyboardType.Email) }
-            item { VoiceField("Dirección", address, { address = it }) }
-            item { VoiceField("Ciudad", city, { city = it }) }
-            item { VoiceField("Código postal", postal, { postal = it }, keyboardType = KeyboardType.Number) }
+            item {
+                VoiceField(
+                    "Nombre del local *",
+                    name,
+                    { name = it }
+                )
+            }
+            item {
+                VoiceField(
+                    "Nombre de la empresa",
+                    business,
+                    { business = it }
+                )
+            }
+            item { VoiceField("NIF", nif, { nif = it }) }
+            item {
+                VoiceField(
+                    "Número de cuenta / IBAN",
+                    bankAccount,
+                    { bankAccount = it }
+                )
+            }
+            item {
+                VoiceField(
+                    "Persona de contacto",
+                    contact,
+                    { contact = it }
+                )
+            }
+            item {
+                VoiceField(
+                    "Teléfono",
+                    phone,
+                    { phone = it },
+                    keyboardType = KeyboardType.Phone
+                )
+            }
+            item {
+                VoiceField(
+                    "Email",
+                    email,
+                    { email = it },
+                    keyboardType = KeyboardType.Email
+                )
+            }
+            item {
+                VoiceField(
+                    "Dirección",
+                    address,
+                    { address = it }
+                )
+            }
+            item {
+                VoiceField(
+                    "Ciudad",
+                    city,
+                    { city = it }
+                )
+            }
+            item {
+                VoiceField(
+                    "Código postal",
+                    postal,
+                    { postal = it },
+                    keyboardType = KeyboardType.Number
+                )
+            }
             item {
                 VoiceField(
                     label = "Observaciones",
@@ -901,6 +1330,8 @@ private fun PartyFormScreen(
                                 id = party.id,
                                 name = name.trim(),
                                 business = business.trim(),
+                                nif = nif.trim(),
+                                bankAccount = bankAccount.trim(),
                                 contact = contact.trim(),
                                 phone = phone.trim(),
                                 email = email.trim(),
@@ -915,6 +1346,8 @@ private fun PartyFormScreen(
                                 vm.addClient(
                                     name = name.trim(),
                                     business = business.trim(),
+                                    nif = nif.trim(),
+                                    bankAccount = bankAccount.trim(),
                                     contact = contact.trim(),
                                     phone = phone.trim(),
                                     email = email.trim(),
@@ -929,7 +1362,10 @@ private fun PartyFormScreen(
                     },
                     modifier = Modifier.fillMaxWidth()
                 ) {
-                    Text(if (editing) "Guardar cambios" else "Guardar $noun")
+                    Text(
+                        if (editing) "Guardar cambios"
+                        else "Guardar $noun"
+                    )
                 }
             }
 
@@ -940,9 +1376,16 @@ private fun PartyFormScreen(
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
-private fun VisitScheduleScreen(vm: AppViewModel, clientId: Long, done: () -> Unit) {
+private fun VisitScheduleScreen(
+    vm: AppViewModel,
+    clientId: Long,
+    done: () -> Unit
+) {
     val context = LocalContext.current
-    val party = remember(clientId, vm.clients, vm.prospects) { vm.client(clientId) }
+    val party = remember(clientId, vm.clients, vm.prospects) {
+        vm.client(clientId)
+    }
+
     val initial = remember {
         Calendar.getInstance().apply {
             add(Calendar.HOUR_OF_DAY, 1)
@@ -953,12 +1396,17 @@ private fun VisitScheduleScreen(vm: AppViewModel, clientId: Long, done: () -> Un
 
     var scheduledAt by remember { mutableStateOf(initial.timeInMillis) }
     var purpose by remember {
-        mutableStateOf(if (party?.isProspect == true) "Prospección" else "Visita comercial")
+        mutableStateOf(
+            if (party?.isProspect == true) "Prospección"
+            else "Visita comercial"
+        )
     }
     var notes by remember { mutableStateOf("") }
 
     fun chooseDate() {
-        val cal = Calendar.getInstance().apply { timeInMillis = scheduledAt }
+        val cal = Calendar.getInstance().apply {
+            timeInMillis = scheduledAt
+        }
 
         DatePickerDialog(
             context,
@@ -978,7 +1426,9 @@ private fun VisitScheduleScreen(vm: AppViewModel, clientId: Long, done: () -> Un
     }
 
     fun chooseTime() {
-        val cal = Calendar.getInstance().apply { timeInMillis = scheduledAt }
+        val cal = Calendar.getInstance().apply {
+            timeInMillis = scheduledAt
+        }
 
         TimePickerDialog(
             context,
@@ -1002,7 +1452,8 @@ private fun VisitScheduleScreen(vm: AppViewModel, clientId: Long, done: () -> Un
         TopAppBar(
             title = {
                 Text(
-                    if (party?.isProspect == true) "Programar prospección" else "Programar visita",
+                    if (party?.isProspect == true) "Programar prospección"
+                    else "Programar visita",
                     color = partyAccentColor(party?.isProspect == true)
                 )
             },
@@ -1014,13 +1465,22 @@ private fun VisitScheduleScreen(vm: AppViewModel, clientId: Long, done: () -> Un
             verticalArrangement = Arrangement.spacedBy(10.dp)
         ) {
             Text("Fecha y hora elegidas", fontWeight = FontWeight.Bold)
-            Text(dateTime(scheduledAt), style = MaterialTheme.typography.titleLarge)
+            Text(
+                dateTime(scheduledAt),
+                style = MaterialTheme.typography.titleLarge
+            )
 
             Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                OutlinedButton(onClick = { chooseDate() }, modifier = Modifier.weight(1f)) {
+                OutlinedButton(
+                    onClick = { chooseDate() },
+                    modifier = Modifier.weight(1f)
+                ) {
                     Text("Elegir fecha")
                 }
-                OutlinedButton(onClick = { chooseTime() }, modifier = Modifier.weight(1f)) {
+                OutlinedButton(
+                    onClick = { chooseTime() },
+                    modifier = Modifier.weight(1f)
+                ) {
                     Text("Elegir hora")
                 }
             }
@@ -1050,9 +1510,15 @@ private fun VisitScheduleScreen(vm: AppViewModel, clientId: Long, done: () -> Un
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
-private fun OrderScreen(vm: AppViewModel, id: Long, done: () -> Unit) {
+private fun OrderScreen(
+    vm: AppViewModel,
+    id: Long,
+    done: () -> Unit
+) {
     val products = remember { vm.products() }
-    val party = remember(id, vm.clients, vm.prospects) { vm.client(id) }
+    val party = remember(id, vm.clients, vm.prospects) {
+        vm.client(id)
+    }
     val qty = remember { mutableStateMapOf<Long, Int>() }
     val total = products.sumOf { it.price * (qty[it.id] ?: 0) }
 
@@ -1087,15 +1553,20 @@ private fun OrderScreen(vm: AppViewModel, id: Long, done: () -> Unit) {
                     Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
                         OutlinedButton(
                             onClick = {
-                                qty[product.id] = ((qty[product.id] ?: 0) - 1).coerceAtLeast(0)
+                                qty[product.id] =
+                                    ((qty[product.id] ?: 0) - 1).coerceAtLeast(0)
                             }
                         ) { Text("-") }
 
-                        Text((qty[product.id] ?: 0).toString(), Modifier.padding(top = 12.dp))
+                        Text(
+                            (qty[product.id] ?: 0).toString(),
+                            Modifier.padding(top = 12.dp)
+                        )
 
                         OutlinedButton(
                             onClick = {
-                                qty[product.id] = (qty[product.id] ?: 0) + 1
+                                qty[product.id] =
+                                    (qty[product.id] ?: 0) + 1
                             }
                         ) { Text("+") }
                     }
@@ -1148,18 +1619,32 @@ private fun VoiceField(
 
             if (spoken.isNotBlank()) {
                 onValueChange(
-                    if (appendVoice && value.isNotBlank()) value.trimEnd() + " " + spoken
-                    else spoken
+                    if (appendVoice && value.isNotBlank()) {
+                        value.trimEnd() + " " + spoken
+                    } else {
+                        spoken
+                    }
                 )
             }
         }
     }
 
     val startVoice = {
-        val intent = Intent(RecognizerIntent.ACTION_RECOGNIZE_SPEECH).apply {
-            putExtra(RecognizerIntent.EXTRA_LANGUAGE_MODEL, RecognizerIntent.LANGUAGE_MODEL_FREE_FORM)
-            putExtra(RecognizerIntent.EXTRA_LANGUAGE, Locale.getDefault().toLanguageTag())
-            putExtra(RecognizerIntent.EXTRA_PROMPT, "Habla ahora")
+        val intent = Intent(
+            RecognizerIntent.ACTION_RECOGNIZE_SPEECH
+        ).apply {
+            putExtra(
+                RecognizerIntent.EXTRA_LANGUAGE_MODEL,
+                RecognizerIntent.LANGUAGE_MODEL_FREE_FORM
+            )
+            putExtra(
+                RecognizerIntent.EXTRA_LANGUAGE,
+                Locale.getDefault().toLanguageTag()
+            )
+            putExtra(
+                RecognizerIntent.EXTRA_PROMPT,
+                "Habla ahora"
+            )
         }
 
         try {
@@ -1181,15 +1666,74 @@ private fun VoiceField(
         minLines = minLines,
         modifier = Modifier.fillMaxWidth(),
         trailingIcon = {
-            TextButton(onClick = startVoice) { Text("Voz") }
+            TextButton(onClick = startVoice) {
+                Text("Voz")
+            }
         }
     )
 }
 
 @Composable
+private fun LocalPhotoBox(
+    photoPath: String,
+    version: Int,
+    isProspect: Boolean,
+    onClick: () -> Unit
+) {
+    val bitmap = remember(photoPath, version) {
+        if (photoPath.isNotBlank()) {
+            BitmapFactory.decodeFile(photoPath)?.asImageBitmap()
+        } else {
+            null
+        }
+    }
+
+    Card(
+        modifier = Modifier
+            .size(118.dp)
+            .clickable(onClick = onClick),
+        colors = CardDefaults.cardColors(
+            containerColor = partyContainerColor(isProspect)
+        )
+    ) {
+        Box(
+            Modifier.fillMaxSize(),
+            contentAlignment = Alignment.Center
+        ) {
+            if (bitmap != null) {
+                Image(
+                    bitmap = bitmap,
+                    contentDescription = "Foto del local",
+                    modifier = Modifier.fillMaxSize(),
+                    contentScale = ContentScale.Crop
+                )
+            } else {
+                Column(
+                    horizontalAlignment = Alignment.CenterHorizontally
+                ) {
+                    Text("📷", style = MaterialTheme.typography.headlineMedium)
+                    Text("Foto", fontWeight = FontWeight.Bold)
+                    Text(
+                        "Tocar para cámara",
+                        style = MaterialTheme.typography.labelSmall
+                    )
+                }
+            }
+        }
+    }
+}
+
+@Composable
 private fun InfoCard(content: @Composable ColumnScope.() -> Unit) {
-    Card(Modifier.padding(horizontal = 16.dp).fillMaxWidth()) {
-        Column(Modifier.padding(14.dp), content = content)
+    Card(
+        Modifier
+            .padding(horizontal = 16.dp)
+            .fillMaxWidth()
+    ) {
+        Column(
+            Modifier.padding(14.dp),
+            content = content
+        )
     }
 }
 
@@ -1201,6 +1745,44 @@ private fun Heading(text: String) {
         fontWeight = FontWeight.Bold,
         modifier = Modifier.padding(horizontal = 16.dp)
     )
+}
+
+@Composable
+private fun HeadingNoPadding(text: String) {
+    Text(
+        text,
+        style = MaterialTheme.typography.titleMedium,
+        fontWeight = FontWeight.Bold
+    )
+}
+
+private fun createClientPhotoFile(
+    context: Context,
+    clientId: Long
+): File {
+    val dir = File(context.filesDir, "client_photos")
+    if (!dir.exists()) dir.mkdirs()
+    return File(
+        dir,
+        "local_" + clientId + "_" + System.currentTimeMillis() + ".jpg"
+    )
+}
+
+private fun todayRange(): Pair<Long, Long> {
+    val start = Calendar.getInstance().apply {
+        set(Calendar.HOUR_OF_DAY, 0)
+        set(Calendar.MINUTE, 0)
+        set(Calendar.SECOND, 0)
+        set(Calendar.MILLISECOND, 0)
+    }
+
+    val end = Calendar.getInstance().apply {
+        timeInMillis = start.timeInMillis
+        add(Calendar.DAY_OF_YEAR, 1)
+        add(Calendar.MILLISECOND, -1)
+    }
+
+    return start.timeInMillis to end.timeInMillis
 }
 
 private fun weekStart(offset: Int): Long {
@@ -1223,24 +1805,58 @@ private fun dayStart(weekStart: Long, dayIndex: Int): Long =
     }.timeInMillis
 
 private fun dayLabel(value: Long): String =
-    SimpleDateFormat("EEE d MMM", Locale("es", "ES")).format(Date(value))
-        .replaceFirstChar { if (it.isLowerCase()) it.titlecase(Locale("es", "ES")) else it.toString() }
+    SimpleDateFormat(
+        "EEE d MMM",
+        Locale("es", "ES")
+    ).format(Date(value)).replaceFirstChar {
+        if (it.isLowerCase()) {
+            it.titlecase(Locale("es", "ES"))
+        } else {
+            it.toString()
+        }
+    }
 
 private fun weekRangeLabel(start: Long): String {
     val end = dayStart(start, 6)
-    return SimpleDateFormat("d MMM", Locale("es", "ES")).format(Date(start)) +
+    return SimpleDateFormat(
+        "d MMM",
+        Locale("es", "ES")
+    ).format(Date(start)) +
         " – " +
-        SimpleDateFormat("d MMM yyyy", Locale("es", "ES")).format(Date(end))
+        SimpleDateFormat(
+            "d MMM yyyy",
+            Locale("es", "ES")
+        ).format(Date(end))
 }
 
+private fun fullDate(value: Long) =
+    SimpleDateFormat(
+        "EEEE d 'de' MMMM 'de' yyyy",
+        Locale("es", "ES")
+    ).format(Date(value)).replaceFirstChar {
+        if (it.isLowerCase()) {
+            it.titlecase(Locale("es", "ES"))
+        } else {
+            it.toString()
+        }
+    }
+
 private fun timeOnly(value: Long) =
-    SimpleDateFormat("HH:mm", Locale("es", "ES")).format(Date(value))
+    SimpleDateFormat(
+        "HH:mm",
+        Locale("es", "ES")
+    ).format(Date(value))
 
 private fun dateTime(value: Long) =
-    DateFormat.getDateTimeInstance(DateFormat.SHORT, DateFormat.SHORT).format(Date(value))
+    DateFormat.getDateTimeInstance(
+        DateFormat.SHORT,
+        DateFormat.SHORT
+    ).format(Date(value))
 
 private fun date(value: Long) =
-    DateFormat.getDateInstance(DateFormat.SHORT).format(Date(value))
+    DateFormat.getDateInstance(
+        DateFormat.SHORT
+    ).format(Date(value))
 
 private val ProspectBlue = Color(0xFF1565C0)
 private val ProspectBlueSoft = Color(0xFFE3F2FD)
@@ -1254,4 +1870,6 @@ private fun partyContainerColor(isProspect: Boolean) =
     if (isProspect) ProspectBlueSoft else ClientGreenSoft
 
 private fun money(value: Double) =
-    NumberFormat.getCurrencyInstance(Locale("es", "ES")).format(value)
+    NumberFormat.getCurrencyInstance(
+        Locale("es", "ES")
+    ).format(value)
