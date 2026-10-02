@@ -13,6 +13,9 @@ class AppViewModel(app: Application) : AndroidViewModel(app) {
     var clients by mutableStateOf<List<Client>>(emptyList())
         private set
 
+    var prospects by mutableStateOf<List<Client>>(emptyList())
+        private set
+
     var agenda by mutableStateOf<List<Visit>>(emptyList())
         private set
 
@@ -22,8 +25,10 @@ class AppViewModel(app: Application) : AndroidViewModel(app) {
 
     fun refresh() {
         clients = db.clients()
+        prospects = db.prospects()
 
         val cal = Calendar.getInstance().apply {
+            add(Calendar.DAY_OF_YEAR, -30)
             set(Calendar.HOUR_OF_DAY, 0)
             set(Calendar.MINUTE, 0)
             set(Calendar.SECOND, 0)
@@ -31,7 +36,7 @@ class AppViewModel(app: Application) : AndroidViewModel(app) {
         }
 
         val from = cal.timeInMillis
-        cal.add(Calendar.DAY_OF_YEAR, 30)
+        cal.add(Calendar.DAY_OF_YEAR, 395)
         cal.set(Calendar.HOUR_OF_DAY, 23)
         cal.set(Calendar.MINUTE, 59)
         agenda = db.agenda(from, cal.timeInMillis)
@@ -53,9 +58,21 @@ class AppViewModel(app: Application) : AndroidViewModel(app) {
         address: String,
         city: String,
         postal: String,
-        notes: String
+        notes: String,
+        isProspect: Boolean = false
     ): Long {
-        val id = db.addClient(name, business, contact, phone, email, address, city, postal, notes)
+        val id = db.addClient(
+            name,
+            business,
+            contact,
+            phone,
+            email,
+            address,
+            city,
+            postal,
+            notes,
+            isProspect
+        )
         refresh()
         return id
     }
@@ -72,7 +89,25 @@ class AppViewModel(app: Application) : AndroidViewModel(app) {
         postal: String,
         notes: String
     ) {
-        db.updateClient(id, name, business, contact, phone, email, address, city, postal, notes)
+        val current = db.client(id) ?: return
+        db.updateClient(
+            id,
+            name,
+            business,
+            contact,
+            phone,
+            email,
+            address,
+            city,
+            postal,
+            notes,
+            current.isProspect
+        )
+        refresh()
+    }
+
+    fun convertProspectToClient(id: Long) {
+        db.convertToClient(id)
         refresh()
     }
 
@@ -80,7 +115,9 @@ class AppViewModel(app: Application) : AndroidViewModel(app) {
         db.addVisit(
             clientId = clientId,
             scheduledAt = scheduledAt,
-            purpose = purpose.ifBlank { "Visita comercial" },
+            purpose = purpose.ifBlank {
+                if (db.client(clientId)?.isProspect == true) "Prospección" else "Visita comercial"
+            },
             notes = notes
         )
         refresh()
@@ -97,7 +134,8 @@ class AppViewModel(app: Application) : AndroidViewModel(app) {
         conversationSummary: String,
         needs: String,
         commitments: String,
-        notes: String
+        notes: String,
+        convertProspect: Boolean = false
     ) {
         db.saveVisitReport(
             visitId = visitId,
@@ -107,6 +145,11 @@ class AppViewModel(app: Application) : AndroidViewModel(app) {
             commitments = commitments,
             notes = notes
         )
+
+        if (convertProspect) {
+            db.convertToClient(clientId)
+        }
+
         refresh()
     }
 

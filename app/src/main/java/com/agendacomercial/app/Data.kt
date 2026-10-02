@@ -15,7 +15,8 @@ data class Client(
     val address: String,
     val city: String,
     val postalCode: String,
-    val observations: String
+    val observations: String,
+    val isProspect: Boolean
 )
 
 data class Visit(
@@ -36,7 +37,7 @@ data class Product(val id: Long, val name: String, val sku: String, val price: D
 data class Consumption(val name: String, val units: Int, val lastOrderedAt: Long, val lastPrice: Double)
 data class OrderSummary(val id: Long, val createdAt: Long, val total: Double, val status: String)
 
-class CrmDb(context: Context) : SQLiteOpenHelper(context, "agenda_comercial.db", null, 2) {
+class CrmDb(context: Context) : SQLiteOpenHelper(context, "agenda_comercial.db", null, 3) {
 
     override fun onCreate(db: SQLiteDatabase) {
         db.execSQL("""
@@ -50,7 +51,8 @@ class CrmDb(context: Context) : SQLiteOpenHelper(context, "agenda_comercial.db",
                 address TEXT NOT NULL DEFAULT '',
                 city TEXT NOT NULL DEFAULT '',
                 postal_code TEXT NOT NULL DEFAULT '',
-                observations TEXT NOT NULL DEFAULT ''
+                observations TEXT NOT NULL DEFAULT '',
+                is_prospect INTEGER NOT NULL DEFAULT 0
             )
         """.trimIndent())
 
@@ -112,6 +114,9 @@ class CrmDb(context: Context) : SQLiteOpenHelper(context, "agenda_comercial.db",
             db.execSQL("ALTER TABLE visits ADD COLUMN commitments TEXT NOT NULL DEFAULT ''")
             db.execSQL("ALTER TABLE visits ADD COLUMN completed_at INTEGER NOT NULL DEFAULT 0")
         }
+        if (oldVersion < 3) {
+            db.execSQL("ALTER TABLE clients ADD COLUMN is_prospect INTEGER NOT NULL DEFAULT 0")
+        }
     }
 
     override fun onConfigure(db: SQLiteDatabase) {
@@ -139,6 +144,7 @@ class CrmDb(context: Context) : SQLiteOpenHelper(context, "agenda_comercial.db",
             put("address", "Dirección de ejemplo")
             put("city", "Barcelona")
             put("observations", "Aquí aparecerán tus observaciones comerciales.")
+            put("is_prospect", 0)
         })
 
         db.insert("visits", null, ContentValues().apply {
@@ -146,32 +152,57 @@ class CrmDb(context: Context) : SQLiteOpenHelper(context, "agenda_comercial.db",
             put("scheduled_at", System.currentTimeMillis() + 60 * 60 * 1000)
             put("purpose", "Presentación y seguimiento")
         })
+
+        db.insert("clients", null, ContentValues().apply {
+            put("name", "Prospecto de ejemplo")
+            put("business_name", "Nuevo establecimiento")
+            put("city", "Barcelona")
+            put("observations", "Ejemplo de ficha que aparece en Prospecciones.")
+            put("is_prospect", 1)
+        })
     }
 
-    fun clients(): List<Client> = readableDatabase.rawQuery(
-        "SELECT id,name,business_name,contact_person,phone,email,address,city,postal_code,observations FROM clients ORDER BY name",
-        null
+    fun clients(): List<Client> = parties(false)
+    fun prospects(): List<Client> = parties(true)
+
+    private fun parties(prospect: Boolean): List<Client> = readableDatabase.rawQuery(
+        """
+        SELECT id,name,business_name,contact_person,phone,email,address,city,postal_code,observations,is_prospect
+        FROM clients
+        WHERE is_prospect=?
+        ORDER BY business_name COLLATE NOCASE, name COLLATE NOCASE
+        """.trimIndent(),
+        arrayOf(if (prospect) "1" else "0")
     ).use { c ->
         buildList {
-            while (c.moveToNext()) add(
-                Client(
-                    c.getLong(0), c.getString(1), c.getString(2), c.getString(3), c.getString(4),
-                    c.getString(5), c.getString(6), c.getString(7), c.getString(8), c.getString(9)
-                )
-            )
+            while (c.moveToNext()) add(clientFromCursor(c))
         }
     }
 
     fun client(id: Long): Client? = readableDatabase.rawQuery(
-        "SELECT id,name,business_name,contact_person,phone,email,address,city,postal_code,observations FROM clients WHERE id=?",
+        """
+        SELECT id,name,business_name,contact_person,phone,email,address,city,postal_code,observations,is_prospect
+        FROM clients
+        WHERE id=?
+        """.trimIndent(),
         arrayOf(id.toString())
     ).use { c ->
-        if (!c.moveToFirst()) null
-        else Client(
-            c.getLong(0), c.getString(1), c.getString(2), c.getString(3), c.getString(4),
-            c.getString(5), c.getString(6), c.getString(7), c.getString(8), c.getString(9)
-        )
+        if (!c.moveToFirst()) null else clientFromCursor(c)
     }
+
+    private fun clientFromCursor(c: android.database.Cursor) = Client(
+        id = c.getLong(0),
+        name = c.getString(1),
+        businessName = c.getString(2),
+        contactPerson = c.getString(3),
+        phone = c.getString(4),
+        email = c.getString(5),
+        address = c.getString(6),
+        city = c.getString(7),
+        postalCode = c.getString(8),
+        observations = c.getString(9),
+        isProspect = c.getInt(10) == 1
+    )
 
     fun addClient(
         name: String,
@@ -182,8 +213,13 @@ class CrmDb(context: Context) : SQLiteOpenHelper(context, "agenda_comercial.db",
         address: String,
         city: String,
         postalCode: String,
-        observations: String
-    ): Long = writableDatabase.insert("clients", null, clientValues(name, business, contact, phone, email, address, city, postalCode, observations))
+        observations: String,
+        isProspect: Boolean = false
+    ): Long = writableDatabase.insert(
+        "clients",
+        null,
+        clientValues(name, business, contact, phone, email, address, city, postalCode, observations, isProspect)
+    )
 
     fun updateClient(
         id: Long,
@@ -195,11 +231,12 @@ class CrmDb(context: Context) : SQLiteOpenHelper(context, "agenda_comercial.db",
         address: String,
         city: String,
         postalCode: String,
-        observations: String
+        observations: String,
+        isProspect: Boolean
     ) {
         writableDatabase.update(
             "clients",
-            clientValues(name, business, contact, phone, email, address, city, postalCode, observations),
+            clientValues(name, business, contact, phone, email, address, city, postalCode, observations, isProspect),
             "id=?",
             arrayOf(id.toString())
         )
@@ -214,7 +251,8 @@ class CrmDb(context: Context) : SQLiteOpenHelper(context, "agenda_comercial.db",
         address: String,
         city: String,
         postalCode: String,
-        observations: String
+        observations: String,
+        isProspect: Boolean
     ) = ContentValues().apply {
         put("name", name)
         put("business_name", business)
@@ -225,11 +263,23 @@ class CrmDb(context: Context) : SQLiteOpenHelper(context, "agenda_comercial.db",
         put("city", city)
         put("postal_code", postalCode)
         put("observations", observations)
+        put("is_prospect", if (isProspect) 1 else 0)
+    }
+
+    fun convertToClient(id: Long) {
+        writableDatabase.update(
+            "clients",
+            ContentValues().apply { put("is_prospect", 0) },
+            "id=?",
+            arrayOf(id.toString())
+        )
     }
 
     fun agenda(from: Long, to: Long): List<Visit> = readableDatabase.rawQuery(
         """
-        SELECT v.id,v.client_id,c.name,v.scheduled_at,v.status,v.purpose,v.notes,
+        SELECT v.id,v.client_id,
+               CASE WHEN c.business_name<>'' THEN c.business_name ELSE c.name END,
+               v.scheduled_at,v.status,v.purpose,v.notes,
                v.conversation_summary,v.needs,v.commitments,v.completed_at
         FROM visits v
         JOIN clients c ON c.id=v.client_id
@@ -241,7 +291,9 @@ class CrmDb(context: Context) : SQLiteOpenHelper(context, "agenda_comercial.db",
 
     fun visits(clientId: Long): List<Visit> = readableDatabase.rawQuery(
         """
-        SELECT v.id,v.client_id,c.name,v.scheduled_at,v.status,v.purpose,v.notes,
+        SELECT v.id,v.client_id,
+               CASE WHEN c.business_name<>'' THEN c.business_name ELSE c.name END,
+               v.scheduled_at,v.status,v.purpose,v.notes,
                v.conversation_summary,v.needs,v.commitments,v.completed_at
         FROM visits v
         JOIN clients c ON c.id=v.client_id
@@ -254,7 +306,9 @@ class CrmDb(context: Context) : SQLiteOpenHelper(context, "agenda_comercial.db",
 
     fun visit(id: Long): Visit? = readableDatabase.rawQuery(
         """
-        SELECT v.id,v.client_id,c.name,v.scheduled_at,v.status,v.purpose,v.notes,
+        SELECT v.id,v.client_id,
+               CASE WHEN c.business_name<>'' THEN c.business_name ELSE c.name END,
+               v.scheduled_at,v.status,v.purpose,v.notes,
                v.conversation_summary,v.needs,v.commitments,v.completed_at
         FROM visits v
         JOIN clients c ON c.id=v.client_id
@@ -328,7 +382,7 @@ class CrmDb(context: Context) : SQLiteOpenHelper(context, "agenda_comercial.db",
 
         values.put("client_id", clientId)
         values.put("scheduled_at", now)
-        values.put("purpose", "Visita comercial")
+        values.put("purpose", if (client(clientId)?.isProspect == true) "Prospección" else "Visita comercial")
         return writableDatabase.insert("visits", null, values)
     }
 
@@ -367,6 +421,13 @@ class CrmDb(context: Context) : SQLiteOpenHelper(context, "agenda_comercial.db",
                     put("unit_price", price)
                 })
             }
+
+            db.update(
+                "clients",
+                ContentValues().apply { put("is_prospect", 0) },
+                "id=?",
+                arrayOf(clientId.toString())
+            )
 
             db.setTransactionSuccessful()
         } finally {
