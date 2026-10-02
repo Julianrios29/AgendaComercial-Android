@@ -48,10 +48,14 @@ class AppViewModel(app: Application) : AndroidViewModel(app) {
     fun products() = db.products()
     fun orders(id: Long) = db.orders(id)
     fun consumption(id: Long) = db.consumption(id)
+    fun dailyVisits(from: Long, to: Long) = db.dailyVisits(from, to)
+    fun dailyOrders(from: Long, to: Long) = db.dailyOrders(from, to)
 
     fun addClient(
         name: String,
         business: String,
+        nif: String,
+        bankAccount: String,
         contact: String,
         phone: String,
         email: String,
@@ -64,6 +68,8 @@ class AppViewModel(app: Application) : AndroidViewModel(app) {
         val id = db.addClient(
             name,
             business,
+            nif,
+            bankAccount,
             contact,
             phone,
             email,
@@ -81,6 +87,8 @@ class AppViewModel(app: Application) : AndroidViewModel(app) {
         id: Long,
         name: String,
         business: String,
+        nif: String,
+        bankAccount: String,
         contact: String,
         phone: String,
         email: String,
@@ -90,10 +98,13 @@ class AppViewModel(app: Application) : AndroidViewModel(app) {
         notes: String
     ) {
         val current = db.client(id) ?: return
+
         db.updateClient(
             id,
             name,
             business,
+            nif,
+            bankAccount,
             contact,
             phone,
             email,
@@ -103,6 +114,11 @@ class AppViewModel(app: Application) : AndroidViewModel(app) {
             notes,
             current.isProspect
         )
+        refresh()
+    }
+
+    fun updatePhoto(id: Long, path: String) {
+        db.updatePhotoPath(id, path)
         refresh()
     }
 
