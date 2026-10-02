@@ -1690,7 +1690,8 @@ private fun LocalPhotoBox(
 
     Card(
         modifier = Modifier
-            .size(118.dp)
+            .width(105.dp)
+            .height(150.dp)
             .clickable(onClick = onClick),
         colors = CardDefaults.cardColors(
             containerColor = partyContainerColor(isProspect)
