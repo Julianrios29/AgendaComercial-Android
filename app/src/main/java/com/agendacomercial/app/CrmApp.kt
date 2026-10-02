@@ -1278,7 +1278,8 @@ private fun PartyFormScreen(
                     "Teléfono",
                     phone,
                     { phone = it },
-                    keyboardType = KeyboardType.Phone
+                    keyboardType = KeyboardType.Phone,
+                    digitsOnlyVoice = true
                 )
             }
             item {
@@ -1308,7 +1309,8 @@ private fun PartyFormScreen(
                     "Código postal",
                     postal,
                     { postal = it },
-                    keyboardType = KeyboardType.Number
+                    keyboardType = KeyboardType.Number,
+                    digitsOnlyVoice = true
                 )
             }
             item {
@@ -1604,7 +1606,8 @@ private fun VoiceField(
     onValueChange: (String) -> Unit,
     keyboardType: KeyboardType = KeyboardType.Text,
     appendVoice: Boolean = false,
-    minLines: Int = 1
+    minLines: Int = 1,
+    digitsOnlyVoice: Boolean = false
 ) {
     val context = LocalContext.current
 
@@ -1618,13 +1621,22 @@ private fun VoiceField(
                 .orEmpty()
 
             if (spoken.isNotBlank()) {
-                onValueChange(
-                    if (appendVoice && value.isNotBlank()) {
-                        value.trimEnd() + " " + spoken
-                    } else {
-                        spoken
-                    }
-                )
+                val normalized = normalizeSpokenNumbers(spoken)
+                val voiceValue = if (digitsOnlyVoice) {
+                    normalized.filter { it.isDigit() }
+                } else {
+                    normalized
+                }
+
+                if (voiceValue.isNotBlank()) {
+                    onValueChange(
+                        if (appendVoice && value.isNotBlank()) {
+                            value.trimEnd() + " " + voiceValue
+                        } else {
+                            voiceValue
+                        }
+                    )
+                }
             }
         }
     }
@@ -1671,6 +1683,205 @@ private fun VoiceField(
             }
         }
     )
+}
+
+private val SpanishDigits = mapOf(
+    "cero" to "0",
+    "un" to "1",
+    "uno" to "1",
+    "una" to "1",
+    "dos" to "2",
+    "tres" to "3",
+    "cuatro" to "4",
+    "cinco" to "5",
+    "seis" to "6",
+    "siete" to "7",
+    "ocho" to "8",
+    "nueve" to "9"
+)
+
+private val SpanishSmallNumbers = mapOf(
+    "cero" to 0L,
+    "un" to 1L,
+    "uno" to 1L,
+    "una" to 1L,
+    "dos" to 2L,
+    "tres" to 3L,
+    "cuatro" to 4L,
+    "cinco" to 5L,
+    "seis" to 6L,
+    "siete" to 7L,
+    "ocho" to 8L,
+    "nueve" to 9L,
+    "diez" to 10L,
+    "once" to 11L,
+    "doce" to 12L,
+    "trece" to 13L,
+    "catorce" to 14L,
+    "quince" to 15L,
+    "dieciseis" to 16L,
+    "diecisiete" to 17L,
+    "dieciocho" to 18L,
+    "diecinueve" to 19L,
+    "veinte" to 20L,
+    "veintiuno" to 21L,
+    "veintiun" to 21L,
+    "veintiuna" to 21L,
+    "veintidos" to 22L,
+    "veintitres" to 23L,
+    "veinticuatro" to 24L,
+    "veinticinco" to 25L,
+    "veintiseis" to 26L,
+    "veintisiete" to 27L,
+    "veintiocho" to 28L,
+    "veintinueve" to 29L
+)
+
+private val SpanishTens = mapOf(
+    "treinta" to 30L,
+    "cuarenta" to 40L,
+    "cincuenta" to 50L,
+    "sesenta" to 60L,
+    "setenta" to 70L,
+    "ochenta" to 80L,
+    "noventa" to 90L
+)
+
+private val SpanishHundreds = mapOf(
+    "cien" to 100L,
+    "ciento" to 100L,
+    "doscientos" to 200L,
+    "doscientas" to 200L,
+    "trescientos" to 300L,
+    "trescientas" to 300L,
+    "cuatrocientos" to 400L,
+    "cuatrocientas" to 400L,
+    "quinientos" to 500L,
+    "quinientas" to 500L,
+    "seiscientos" to 600L,
+    "seiscientas" to 600L,
+    "setecientos" to 700L,
+    "setecientas" to 700L,
+    "ochocientos" to 800L,
+    "ochocientas" to 800L,
+    "novecientos" to 900L,
+    "novecientas" to 900L
+)
+
+private fun normalizedSpanishWord(value: String): String {
+    return java.text.Normalizer.normalize(
+        value.lowercase(Locale("es", "ES")),
+        java.text.Normalizer.Form.NFD
+    )
+        .replace(Regex("\\p{M}+"), "")
+        .trim(',', '.', ';', ':', '!', '?', '¿', '¡')
+}
+
+private fun isSpanishNumberWord(word: String): Boolean {
+    return SpanishSmallNumbers.containsKey(word) ||
+        SpanishTens.containsKey(word) ||
+        SpanishHundreds.containsKey(word) ||
+        word == "mil" ||
+        word == "millon" ||
+        word == "millones"
+}
+
+private fun spanishNumberGroupToDigits(words: List<String>): String? {
+    val filtered = words.filter { it != "y" }
+    if (filtered.isEmpty()) return null
+
+    if (filtered.all { SpanishDigits.containsKey(it) }) {
+        return filtered.joinToString("") { SpanishDigits.getValue(it) }
+    }
+
+    var total = 0L
+    var current = 0L
+    var found = false
+
+    for (word in filtered) {
+        when {
+            SpanishSmallNumbers.containsKey(word) -> {
+                current += SpanishSmallNumbers.getValue(word)
+                found = true
+            }
+
+            SpanishTens.containsKey(word) -> {
+                current += SpanishTens.getValue(word)
+                found = true
+            }
+
+            SpanishHundreds.containsKey(word) -> {
+                current += SpanishHundreds.getValue(word)
+                found = true
+            }
+
+            word == "mil" -> {
+                if (current == 0L) current = 1L
+                total += current * 1000L
+                current = 0L
+                found = true
+            }
+
+            word == "millon" || word == "millones" -> {
+                if (current == 0L && total == 0L) current = 1L
+                total = (total + current) * 1_000_000L
+                current = 0L
+                found = true
+            }
+        }
+    }
+
+    return if (found) (total + current).toString() else null
+}
+
+private fun normalizeSpokenNumbers(text: String): String {
+    val tokens = text.trim().split(Regex("\\s+"))
+    if (tokens.isEmpty()) return text
+
+    val output = mutableListOf<String>()
+    var index = 0
+
+    while (index < tokens.size) {
+        val normalized = normalizedSpanishWord(tokens[index])
+
+        if (!isSpanishNumberWord(normalized)) {
+            output += tokens[index]
+            index++
+            continue
+        }
+
+        val numberWords = mutableListOf<String>()
+        var cursor = index
+
+        while (cursor < tokens.size) {
+            val word = normalizedSpanishWord(tokens[cursor])
+
+            if (isSpanishNumberWord(word)) {
+                numberWords += word
+                cursor++
+                continue
+            }
+
+            if (
+                word == "y" &&
+                numberWords.isNotEmpty() &&
+                cursor + 1 < tokens.size &&
+                isSpanishNumberWord(normalizedSpanishWord(tokens[cursor + 1]))
+            ) {
+                numberWords += word
+                cursor++
+                continue
+            }
+
+            break
+        }
+
+        output += spanishNumberGroupToDigits(numberWords)
+            ?: tokens.subList(index, cursor).joinToString(" ")
+        index = cursor
+    }
+
+    return output.joinToString(" ")
 }
 
 @Composable
