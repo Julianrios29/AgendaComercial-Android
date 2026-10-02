@@ -28,7 +28,7 @@ class AppViewModel(app: Application) : AndroidViewModel(app) {
         prospects = db.prospects()
 
         val cal = Calendar.getInstance().apply {
-            add(Calendar.DAY_OF_YEAR, -7)
+            add(Calendar.DAY_OF_YEAR, -30)
             set(Calendar.HOUR_OF_DAY, 0)
             set(Calendar.MINUTE, 0)
             set(Calendar.SECOND, 0)
@@ -36,7 +36,7 @@ class AppViewModel(app: Application) : AndroidViewModel(app) {
         }
 
         val from = cal.timeInMillis
-        cal.add(Calendar.DAY_OF_YEAR, 60)
+        cal.add(Calendar.DAY_OF_YEAR, 395)
         cal.set(Calendar.HOUR_OF_DAY, 23)
         cal.set(Calendar.MINUTE, 59)
         agenda = db.agenda(from, cal.timeInMillis)
