@@ -19,6 +19,7 @@ import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.input.KeyboardType
@@ -191,31 +192,26 @@ private fun WeeklyAgendaScreen(vm: AppViewModel, open: (Long, Long) -> Unit) {
         TopAppBar(title = { Text("Agenda semanal") })
 
         Row(
-            Modifier.padding(horizontal = 12.dp),
-            horizontalArrangement = Arrangement.spacedBy(6.dp)
+            Modifier
+                .fillMaxWidth()
+                .padding(horizontal = 8.dp, vertical = 2.dp),
+            horizontalArrangement = Arrangement.SpaceBetween
         ) {
-            OutlinedButton(
-                onClick = { weekOffset-- },
-                modifier = Modifier.weight(1f)
-            ) { Text("< Semana") }
+            IconButton(onClick = { weekOffset-- }) {
+                Text("‹", style = MaterialTheme.typography.headlineMedium)
+            }
 
-            OutlinedButton(
-                onClick = { weekOffset = 0 },
-                modifier = Modifier.weight(1f)
-            ) { Text("Esta semana") }
+            Text(
+                weekRangeLabel(start),
+                style = MaterialTheme.typography.titleMedium,
+                fontWeight = FontWeight.Bold,
+                modifier = Modifier.padding(top = 12.dp)
+            )
 
-            OutlinedButton(
-                onClick = { weekOffset++ },
-                modifier = Modifier.weight(1f)
-            ) { Text("Semana >") }
+            IconButton(onClick = { weekOffset++ }) {
+                Text("›", style = MaterialTheme.typography.headlineMedium)
+            }
         }
-
-        Text(
-            weekRangeLabel(start),
-            style = MaterialTheme.typography.titleMedium,
-            fontWeight = FontWeight.Bold,
-            modifier = Modifier.padding(16.dp)
-        )
 
         LazyRow(
             contentPadding = PaddingValues(horizontal = 12.dp, vertical = 4.dp),
@@ -247,13 +243,26 @@ private fun WeeklyAgendaScreen(vm: AppViewModel, open: (Long, Long) -> Unit) {
                             Surface(
                                 tonalElevation = 2.dp,
                                 shape = MaterialTheme.shapes.small,
+                                color = partyContainerColor(visit.isProspect),
                                 modifier = Modifier
                                     .fillMaxWidth()
                                     .clickable { open(visit.clientId, visit.id) }
                             ) {
                                 Column(Modifier.padding(10.dp)) {
-                                    Text(timeOnly(visit.scheduledAt), fontWeight = FontWeight.Bold)
-                                    Text(visit.clientName)
+                                    Text(
+                                        timeOnly(visit.scheduledAt),
+                                        fontWeight = FontWeight.Bold,
+                                        color = partyAccentColor(visit.isProspect)
+                                    )
+                                    Text(
+                                        visit.clientName,
+                                        fontWeight = FontWeight.SemiBold
+                                    )
+                                    Text(
+                                        if (visit.isProspect) "Prospección" else "Cliente",
+                                        color = partyAccentColor(visit.isProspect),
+                                        style = MaterialTheme.typography.labelSmall
+                                    )
                                     Text(
                                         visit.purpose,
                                         style = MaterialTheme.typography.bodySmall
@@ -296,7 +305,7 @@ private fun PartyListScreen(
     var query by remember { mutableStateOf("") }
 
     val list = parties.filter {
-        query.isBlank() || listOf(it.name, it.businessName, it.city, it.phone).any { value ->
+        query.isBlank() || listOf(it.name, it.businessName, it.contactPerson, it.city, it.phone).any { value ->
             value.contains(query, ignoreCase = true)
         }
     }
@@ -325,24 +334,30 @@ private fun PartyListScreen(
             }
 
             items(list, key = { it.id }) { party ->
-                Card(Modifier.fillMaxWidth().clickable { onOpen(party.id) }) {
+                Card(
+                    modifier = Modifier.fillMaxWidth().clickable { onOpen(party.id) },
+                    colors = CardDefaults.cardColors(
+                        containerColor = partyContainerColor(party.isProspect)
+                    )
+                ) {
                     Column(Modifier.padding(16.dp)) {
                         Text(
                             party.businessName.ifBlank { party.name },
+                            fontWeight = FontWeight.Bold,
+                            color = partyAccentColor(party.isProspect)
+                        )
+                        Text(
+                            "Contacto: " + party.contactPerson.ifBlank { party.name }
+                        )
+                        Text(
+                            "Teléfono: " + party.phone.ifBlank { "Sin teléfono" }
+                        )
+                        Text(
+                            if (party.isProspect) "Prospección" else "Cliente",
+                            color = partyAccentColor(party.isProspect),
+                            style = MaterialTheme.typography.labelMedium,
                             fontWeight = FontWeight.Bold
                         )
-                        if (party.businessName.isNotBlank()) Text(party.name)
-                        Text(
-                            listOf(party.address, party.city)
-                                .filter(String::isNotBlank)
-                                .joinToString(", ")
-                        )
-                        if (party.isProspect) {
-                            Text(
-                                "Prospección",
-                                style = MaterialTheme.typography.labelMedium
-                            )
-                        }
                     }
                 }
             }
@@ -1189,6 +1204,17 @@ private fun dateTime(value: Long) =
 
 private fun date(value: Long) =
     DateFormat.getDateInstance(DateFormat.SHORT).format(Date(value))
+
+private val ProspectBlue = Color(0xFF1565C0)
+private val ProspectBlueSoft = Color(0xFFE3F2FD)
+private val ClientGreen = Color(0xFF2E7D32)
+private val ClientGreenSoft = Color(0xFFE8F5E9)
+
+private fun partyAccentColor(isProspect: Boolean) =
+    if (isProspect) ProspectBlue else ClientGreen
+
+private fun partyContainerColor(isProspect: Boolean) =
+    if (isProspect) ProspectBlueSoft else ClientGreenSoft
 
 private fun money(value: Double) =
     NumberFormat.getCurrencyInstance(Locale("es", "ES")).format(value)
