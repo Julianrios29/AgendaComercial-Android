@@ -25,14 +25,19 @@ data class Visit(
     val scheduledAt: Long,
     val status: String,
     val purpose: String,
-    val notes: String
+    val notes: String,
+    val conversationSummary: String,
+    val needs: String,
+    val commitments: String,
+    val completedAt: Long
 )
 
 data class Product(val id: Long, val name: String, val sku: String, val price: Double)
 data class Consumption(val name: String, val units: Int, val lastOrderedAt: Long, val lastPrice: Double)
 data class OrderSummary(val id: Long, val createdAt: Long, val total: Double, val status: String)
 
-class CrmDb(context: Context) : SQLiteOpenHelper(context, "agenda_comercial.db", null, 1) {
+class CrmDb(context: Context) : SQLiteOpenHelper(context, "agenda_comercial.db", null, 2) {
+
     override fun onCreate(db: SQLiteDatabase) {
         db.execSQL("""
             CREATE TABLE clients(
@@ -48,6 +53,7 @@ class CrmDb(context: Context) : SQLiteOpenHelper(context, "agenda_comercial.db",
                 observations TEXT NOT NULL DEFAULT ''
             )
         """.trimIndent())
+
         db.execSQL("""
             CREATE TABLE visits(
                 id INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -56,9 +62,14 @@ class CrmDb(context: Context) : SQLiteOpenHelper(context, "agenda_comercial.db",
                 status TEXT NOT NULL DEFAULT 'PENDIENTE',
                 purpose TEXT NOT NULL DEFAULT 'Visita comercial',
                 notes TEXT NOT NULL DEFAULT '',
+                conversation_summary TEXT NOT NULL DEFAULT '',
+                needs TEXT NOT NULL DEFAULT '',
+                commitments TEXT NOT NULL DEFAULT '',
+                completed_at INTEGER NOT NULL DEFAULT 0,
                 FOREIGN KEY(client_id) REFERENCES clients(id) ON DELETE CASCADE
             )
         """.trimIndent())
+
         db.execSQL("""
             CREATE TABLE products(
                 id INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -67,6 +78,7 @@ class CrmDb(context: Context) : SQLiteOpenHelper(context, "agenda_comercial.db",
                 price REAL NOT NULL DEFAULT 0
             )
         """.trimIndent())
+
         db.execSQL("""
             CREATE TABLE orders(
                 id INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -77,6 +89,7 @@ class CrmDb(context: Context) : SQLiteOpenHelper(context, "agenda_comercial.db",
                 FOREIGN KEY(client_id) REFERENCES clients(id) ON DELETE CASCADE
             )
         """.trimIndent())
+
         db.execSQL("""
             CREATE TABLE order_items(
                 id INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -88,10 +101,18 @@ class CrmDb(context: Context) : SQLiteOpenHelper(context, "agenda_comercial.db",
                 FOREIGN KEY(product_id) REFERENCES products(id)
             )
         """.trimIndent())
+
         seed(db)
     }
 
-    override fun onUpgrade(db: SQLiteDatabase, oldVersion: Int, newVersion: Int) = Unit
+    override fun onUpgrade(db: SQLiteDatabase, oldVersion: Int, newVersion: Int) {
+        if (oldVersion < 2) {
+            db.execSQL("ALTER TABLE visits ADD COLUMN conversation_summary TEXT NOT NULL DEFAULT ''")
+            db.execSQL("ALTER TABLE visits ADD COLUMN needs TEXT NOT NULL DEFAULT ''")
+            db.execSQL("ALTER TABLE visits ADD COLUMN commitments TEXT NOT NULL DEFAULT ''")
+            db.execSQL("ALTER TABLE visits ADD COLUMN completed_at INTEGER NOT NULL DEFAULT 0")
+        }
+    }
 
     override fun onConfigure(db: SQLiteDatabase) {
         super.onConfigure(db)
@@ -105,9 +126,12 @@ class CrmDb(context: Context) : SQLiteOpenHelper(context, "agenda_comercial.db",
             Triple("Producto C", "C001", 8.75)
         ).forEach { (name, sku, price) ->
             db.insert("products", null, ContentValues().apply {
-                put("name", name); put("sku", sku); put("price", price)
+                put("name", name)
+                put("sku", sku)
+                put("price", price)
             })
         }
+
         val clientId = db.insert("clients", null, ContentValues().apply {
             put("name", "Cliente de ejemplo")
             put("business_name", "Comercio de ejemplo")
@@ -116,6 +140,7 @@ class CrmDb(context: Context) : SQLiteOpenHelper(context, "agenda_comercial.db",
             put("city", "Barcelona")
             put("observations", "Aquí aparecerán tus observaciones comerciales.")
         })
+
         db.insert("visits", null, ContentValues().apply {
             put("client_id", clientId)
             put("scheduled_at", System.currentTimeMillis() + 60 * 60 * 1000)
@@ -128,10 +153,12 @@ class CrmDb(context: Context) : SQLiteOpenHelper(context, "agenda_comercial.db",
         null
     ).use { c ->
         buildList {
-            while (c.moveToNext()) add(Client(
-                c.getLong(0), c.getString(1), c.getString(2), c.getString(3), c.getString(4),
-                c.getString(5), c.getString(6), c.getString(7), c.getString(8), c.getString(9)
-            ))
+            while (c.moveToNext()) add(
+                Client(
+                    c.getLong(0), c.getString(1), c.getString(2), c.getString(3), c.getString(4),
+                    c.getString(5), c.getString(6), c.getString(7), c.getString(8), c.getString(9)
+                )
+            )
         }
     }
 
@@ -139,77 +166,208 @@ class CrmDb(context: Context) : SQLiteOpenHelper(context, "agenda_comercial.db",
         "SELECT id,name,business_name,contact_person,phone,email,address,city,postal_code,observations FROM clients WHERE id=?",
         arrayOf(id.toString())
     ).use { c ->
-        if (!c.moveToFirst()) null else Client(
+        if (!c.moveToFirst()) null
+        else Client(
             c.getLong(0), c.getString(1), c.getString(2), c.getString(3), c.getString(4),
             c.getString(5), c.getString(6), c.getString(7), c.getString(8), c.getString(9)
         )
     }
 
     fun addClient(
-        name: String, business: String, contact: String, phone: String, email: String,
-        address: String, city: String, postalCode: String, observations: String
-    ): Long = writableDatabase.insert("clients", null, ContentValues().apply {
-        put("name", name); put("business_name", business); put("contact_person", contact)
-        put("phone", phone); put("email", email); put("address", address); put("city", city)
-        put("postal_code", postalCode); put("observations", observations)
-    })
+        name: String,
+        business: String,
+        contact: String,
+        phone: String,
+        email: String,
+        address: String,
+        city: String,
+        postalCode: String,
+        observations: String
+    ): Long = writableDatabase.insert("clients", null, clientValues(name, business, contact, phone, email, address, city, postalCode, observations))
+
+    fun updateClient(
+        id: Long,
+        name: String,
+        business: String,
+        contact: String,
+        phone: String,
+        email: String,
+        address: String,
+        city: String,
+        postalCode: String,
+        observations: String
+    ) {
+        writableDatabase.update(
+            "clients",
+            clientValues(name, business, contact, phone, email, address, city, postalCode, observations),
+            "id=?",
+            arrayOf(id.toString())
+        )
+    }
+
+    private fun clientValues(
+        name: String,
+        business: String,
+        contact: String,
+        phone: String,
+        email: String,
+        address: String,
+        city: String,
+        postalCode: String,
+        observations: String
+    ) = ContentValues().apply {
+        put("name", name)
+        put("business_name", business)
+        put("contact_person", contact)
+        put("phone", phone)
+        put("email", email)
+        put("address", address)
+        put("city", city)
+        put("postal_code", postalCode)
+        put("observations", observations)
+    }
 
     fun agenda(from: Long, to: Long): List<Visit> = readableDatabase.rawQuery(
         """
-        SELECT v.id,v.client_id,c.name,v.scheduled_at,v.status,v.purpose,v.notes
-        FROM visits v JOIN clients c ON c.id=v.client_id
+        SELECT v.id,v.client_id,c.name,v.scheduled_at,v.status,v.purpose,v.notes,
+               v.conversation_summary,v.needs,v.commitments,v.completed_at
+        FROM visits v
+        JOIN clients c ON c.id=v.client_id
         WHERE v.scheduled_at BETWEEN ? AND ?
         ORDER BY v.scheduled_at
-        """.trimIndent(), arrayOf(from.toString(), to.toString())
-    ).use { c ->
-        buildList {
-            while (c.moveToNext()) add(Visit(c.getLong(0), c.getLong(1), c.getString(2), c.getLong(3), c.getString(4), c.getString(5), c.getString(6)))
-        }
-    }
+        """.trimIndent(),
+        arrayOf(from.toString(), to.toString())
+    ).use { c -> readVisits(c) }
 
     fun visits(clientId: Long): List<Visit> = readableDatabase.rawQuery(
         """
-        SELECT v.id,v.client_id,c.name,v.scheduled_at,v.status,v.purpose,v.notes
-        FROM visits v JOIN clients c ON c.id=v.client_id
-        WHERE v.client_id=? ORDER BY v.scheduled_at DESC LIMIT 30
-        """.trimIndent(), arrayOf(clientId.toString())
+        SELECT v.id,v.client_id,c.name,v.scheduled_at,v.status,v.purpose,v.notes,
+               v.conversation_summary,v.needs,v.commitments,v.completed_at
+        FROM visits v
+        JOIN clients c ON c.id=v.client_id
+        WHERE v.client_id=?
+        ORDER BY v.scheduled_at DESC
+        LIMIT 50
+        """.trimIndent(),
+        arrayOf(clientId.toString())
+    ).use { c -> readVisits(c) }
+
+    fun visit(id: Long): Visit? = readableDatabase.rawQuery(
+        """
+        SELECT v.id,v.client_id,c.name,v.scheduled_at,v.status,v.purpose,v.notes,
+               v.conversation_summary,v.needs,v.commitments,v.completed_at
+        FROM visits v
+        JOIN clients c ON c.id=v.client_id
+        WHERE v.id=?
+        """.trimIndent(),
+        arrayOf(id.toString())
     ).use { c ->
-        buildList {
-            while (c.moveToNext()) add(Visit(c.getLong(0), c.getLong(1), c.getString(2), c.getLong(3), c.getString(4), c.getString(5), c.getString(6)))
-        }
+        if (!c.moveToFirst()) null else visitFromCursor(c)
     }
 
-    fun addVisit(clientId: Long, scheduledAt: Long, purpose: String, notes: String) {
-        writableDatabase.insert("visits", null, ContentValues().apply {
-            put("client_id", clientId); put("scheduled_at", scheduledAt); put("purpose", purpose); put("notes", notes)
-        })
+    private fun readVisits(c: android.database.Cursor): List<Visit> = buildList {
+        while (c.moveToNext()) add(visitFromCursor(c))
     }
+
+    private fun visitFromCursor(c: android.database.Cursor) = Visit(
+        id = c.getLong(0),
+        clientId = c.getLong(1),
+        clientName = c.getString(2),
+        scheduledAt = c.getLong(3),
+        status = c.getString(4),
+        purpose = c.getString(5),
+        notes = c.getString(6),
+        conversationSummary = c.getString(7),
+        needs = c.getString(8),
+        commitments = c.getString(9),
+        completedAt = c.getLong(10)
+    )
+
+    fun addVisit(clientId: Long, scheduledAt: Long, purpose: String, notes: String): Long =
+        writableDatabase.insert("visits", null, ContentValues().apply {
+            put("client_id", clientId)
+            put("scheduled_at", scheduledAt)
+            put("purpose", purpose)
+            put("notes", notes)
+        })
 
     fun completeVisit(id: Long) {
-        writableDatabase.update("visits", ContentValues().apply { put("status", "REALIZADA") }, "id=?", arrayOf(id.toString()))
+        writableDatabase.update(
+            "visits",
+            ContentValues().apply {
+                put("status", "REALIZADA")
+                put("completed_at", System.currentTimeMillis())
+            },
+            "id=?",
+            arrayOf(id.toString())
+        )
     }
 
-    fun products(): List<Product> = readableDatabase.rawQuery("SELECT id,name,sku,price FROM products ORDER BY name", null).use { c ->
-        buildList { while (c.moveToNext()) add(Product(c.getLong(0), c.getString(1), c.getString(2), c.getDouble(3))) }
+    fun saveVisitReport(
+        visitId: Long?,
+        clientId: Long,
+        conversationSummary: String,
+        needs: String,
+        commitments: String,
+        notes: String
+    ): Long {
+        val now = System.currentTimeMillis()
+        val values = ContentValues().apply {
+            put("status", "REALIZADA")
+            put("completed_at", now)
+            put("conversation_summary", conversationSummary)
+            put("needs", needs)
+            put("commitments", commitments)
+            put("notes", notes)
+        }
+
+        if (visitId != null && visit(visitId) != null) {
+            writableDatabase.update("visits", values, "id=?", arrayOf(visitId.toString()))
+            return visitId
+        }
+
+        values.put("client_id", clientId)
+        values.put("scheduled_at", now)
+        values.put("purpose", "Visita comercial")
+        return writableDatabase.insert("visits", null, values)
+    }
+
+    fun products(): List<Product> = readableDatabase.rawQuery(
+        "SELECT id,name,sku,price FROM products ORDER BY name",
+        null
+    ).use { c ->
+        buildList {
+            while (c.moveToNext()) add(Product(c.getLong(0), c.getString(1), c.getString(2), c.getDouble(3)))
+        }
     }
 
     fun addOrder(clientId: Long, quantities: Map<Long, Int>) {
         val productMap = products().associateBy { it.id }
         val lines = quantities.filterValues { it > 0 }
         if (lines.isEmpty()) return
+
         val total = lines.entries.sumOf { (id, qty) -> (productMap[id]?.price ?: 0.0) * qty }
         val db = writableDatabase
         db.beginTransaction()
+
         try {
             val orderId = db.insert("orders", null, ContentValues().apply {
-                put("client_id", clientId); put("created_at", System.currentTimeMillis()); put("total", total); put("status", "CONFIRMADO")
+                put("client_id", clientId)
+                put("created_at", System.currentTimeMillis())
+                put("total", total)
+                put("status", "CONFIRMADO")
             })
+
             lines.forEach { (productId, qty) ->
                 val price = productMap[productId]?.price ?: 0.0
                 db.insert("order_items", null, ContentValues().apply {
-                    put("order_id", orderId); put("product_id", productId); put("quantity", qty); put("unit_price", price)
+                    put("order_id", orderId)
+                    put("product_id", productId)
+                    put("quantity", qty)
+                    put("unit_price", price)
                 })
             }
+
             db.setTransactionSuccessful()
         } finally {
             db.endTransaction()
@@ -217,25 +375,34 @@ class CrmDb(context: Context) : SQLiteOpenHelper(context, "agenda_comercial.db",
     }
 
     fun orders(clientId: Long): List<OrderSummary> = readableDatabase.rawQuery(
-        "SELECT id,created_at,total,status FROM orders WHERE client_id=? ORDER BY created_at DESC LIMIT 30",
+        "SELECT id,created_at,total,status FROM orders WHERE client_id=? ORDER BY created_at DESC LIMIT 50",
         arrayOf(clientId.toString())
     ).use { c ->
-        buildList { while (c.moveToNext()) add(OrderSummary(c.getLong(0), c.getLong(1), c.getDouble(2), c.getString(3))) }
+        buildList {
+            while (c.moveToNext()) add(OrderSummary(c.getLong(0), c.getLong(1), c.getDouble(2), c.getString(3)))
+        }
     }
 
     fun consumption(clientId: Long): List<Consumption> = readableDatabase.rawQuery(
         """
         SELECT p.name,CAST(SUM(oi.quantity) AS INTEGER),MAX(o.created_at),
-               (SELECT oi2.unit_price FROM order_items oi2 JOIN orders o2 ON o2.id=oi2.order_id
-                WHERE o2.client_id=? AND oi2.product_id=p.id ORDER BY o2.created_at DESC LIMIT 1)
+               (SELECT oi2.unit_price
+                FROM order_items oi2
+                JOIN orders o2 ON o2.id=oi2.order_id
+                WHERE o2.client_id=? AND oi2.product_id=p.id
+                ORDER BY o2.created_at DESC
+                LIMIT 1)
         FROM order_items oi
         JOIN orders o ON o.id=oi.order_id
         JOIN products p ON p.id=oi.product_id
         WHERE o.client_id=?
         GROUP BY p.id,p.name
         ORDER BY MAX(o.created_at) DESC
-        """.trimIndent(), arrayOf(clientId.toString(), clientId.toString())
+        """.trimIndent(),
+        arrayOf(clientId.toString(), clientId.toString())
     ).use { c ->
-        buildList { while (c.moveToNext()) add(Consumption(c.getString(0), c.getInt(1), c.getLong(2), c.getDouble(3))) }
+        buildList {
+            while (c.moveToNext()) add(Consumption(c.getString(0), c.getInt(1), c.getLong(2), c.getDouble(3)))
+        }
     }
 }
