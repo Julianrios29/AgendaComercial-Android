@@ -30,7 +30,8 @@ data class Visit(
     val conversationSummary: String,
     val needs: String,
     val commitments: String,
-    val completedAt: Long
+    val completedAt: Long,
+    val isProspect: Boolean
 )
 
 data class Product(val id: Long, val name: String, val sku: String, val price: Double)
@@ -280,7 +281,7 @@ class CrmDb(context: Context) : SQLiteOpenHelper(context, "agenda_comercial.db",
         SELECT v.id,v.client_id,
                CASE WHEN c.business_name<>'' THEN c.business_name ELSE c.name END,
                v.scheduled_at,v.status,v.purpose,v.notes,
-               v.conversation_summary,v.needs,v.commitments,v.completed_at
+               v.conversation_summary,v.needs,v.commitments,v.completed_at,c.is_prospect
         FROM visits v
         JOIN clients c ON c.id=v.client_id
         WHERE v.scheduled_at BETWEEN ? AND ?
@@ -294,7 +295,7 @@ class CrmDb(context: Context) : SQLiteOpenHelper(context, "agenda_comercial.db",
         SELECT v.id,v.client_id,
                CASE WHEN c.business_name<>'' THEN c.business_name ELSE c.name END,
                v.scheduled_at,v.status,v.purpose,v.notes,
-               v.conversation_summary,v.needs,v.commitments,v.completed_at
+               v.conversation_summary,v.needs,v.commitments,v.completed_at,c.is_prospect
         FROM visits v
         JOIN clients c ON c.id=v.client_id
         WHERE v.client_id=?
@@ -309,7 +310,7 @@ class CrmDb(context: Context) : SQLiteOpenHelper(context, "agenda_comercial.db",
         SELECT v.id,v.client_id,
                CASE WHEN c.business_name<>'' THEN c.business_name ELSE c.name END,
                v.scheduled_at,v.status,v.purpose,v.notes,
-               v.conversation_summary,v.needs,v.commitments,v.completed_at
+               v.conversation_summary,v.needs,v.commitments,v.completed_at,c.is_prospect
         FROM visits v
         JOIN clients c ON c.id=v.client_id
         WHERE v.id=?
@@ -334,7 +335,8 @@ class CrmDb(context: Context) : SQLiteOpenHelper(context, "agenda_comercial.db",
         conversationSummary = c.getString(7),
         needs = c.getString(8),
         commitments = c.getString(9),
-        completedAt = c.getLong(10)
+        completedAt = c.getLong(10),
+        isProspect = c.getInt(11) == 1
     )
 
     fun addVisit(clientId: Long, scheduledAt: Long, purpose: String, notes: String): Long =
