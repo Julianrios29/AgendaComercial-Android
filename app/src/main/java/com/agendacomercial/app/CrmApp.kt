@@ -1939,9 +1939,12 @@ private fun LocalPhotoBox(
 @Composable
 private fun InfoCard(content: @Composable ColumnScope.() -> Unit) {
     Card(
-        Modifier
+        modifier = Modifier
             .padding(horizontal = 16.dp)
-            .fillMaxWidth()
+            .fillMaxWidth(),
+        colors = CardDefaults.cardColors(
+            containerColor = CorporateSurfaceAlt
+        )
     ) {
         Column(
             Modifier.padding(14.dp),
@@ -1956,6 +1959,7 @@ private fun Heading(text: String) {
         text,
         style = MaterialTheme.typography.titleMedium,
         fontWeight = FontWeight.Bold,
+        color = CorporateGold,
         modifier = Modifier.padding(horizontal = 16.dp)
     )
 }
@@ -1965,7 +1969,8 @@ private fun HeadingNoPadding(text: String) {
     Text(
         text,
         style = MaterialTheme.typography.titleMedium,
-        fontWeight = FontWeight.Bold
+        fontWeight = FontWeight.Bold,
+        color = CorporateGold
     )
 }
 
@@ -2071,29 +2076,38 @@ private fun date(value: Long) =
         DateFormat.SHORT
     ).format(Date(value))
 
-private val ProspectBlue = Color(0xFF1565C0)
-private val ProspectBlueSoft = Color(0xFF0B2239)
-private val ClientGreen = Color(0xFF2E7D32)
-private val ClientGreenSoft = Color(0xFF0B2814)
+private val CorporateGold = Color(0xFFFFD34E)
+private val CorporateGreen = Color(0xFF0A6A42)
+private val CorporateOrange = Color(0xFFF5A11A)
+private val CorporateBlack = Color(0xFF050505)
+private val CorporateSurface = Color(0xFF101010)
+private val CorporateSurfaceAlt = Color(0xFF191919)
+
+private val ProspectBlue = Color(0xFF90CAF9)
+private val ProspectBlueSoft = Color(0xFF173A52)
+private val ClientGreen = Color(0xFFA5D6A7)
+private val ClientGreenSoft = Color(0xFF1D3D25)
 
 private val CorporateDarkColors = darkColorScheme(
-    primary = Color.White,
+    primary = CorporateGold,
     onPrimary = Color.Black,
-    primaryContainer = Color(0xFF202020),
+    primaryContainer = Color(0xFF5A4710),
     onPrimaryContainer = Color.White,
-    secondary = Color.White,
-    onSecondary = Color.Black,
-    secondaryContainer = Color(0xFF242424),
+    secondary = CorporateGreen,
+    onSecondary = Color.White,
+    secondaryContainer = Color(0xFF15372A),
     onSecondaryContainer = Color.White,
-    tertiary = Color.White,
+    tertiary = CorporateOrange,
     onTertiary = Color.Black,
-    background = Color.Black,
+    tertiaryContainer = Color(0xFF5A3508),
+    onTertiaryContainer = Color.White,
+    background = CorporateBlack,
     onBackground = Color.White,
-    surface = Color(0xFF090909),
+    surface = CorporateSurface,
     onSurface = Color.White,
-    surfaceVariant = Color(0xFF171717),
-    onSurfaceVariant = Color.White,
-    outline = Color(0xFFBDBDBD)
+    surfaceVariant = CorporateSurfaceAlt,
+    onSurfaceVariant = Color(0xFFEAEAEA),
+    outline = Color(0xFF8B8B8B)
 )
 
 private fun partyAccentColor(isProspect: Boolean) =
