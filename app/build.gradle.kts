@@ -9,11 +9,11 @@ android {
     compileSdk = 35
 
     defaultConfig {
-        applicationId = "com.agendacomercial.app"
+        applicationId = "com.pasola.agendacomercial"
         minSdk = 23
         targetSdk = 35
-        versionCode = 12
-        versionName = "0.10.2"
+        versionCode = 13
+        versionName = "0.10.3"
     }
 
     buildFeatures { compose = true }
