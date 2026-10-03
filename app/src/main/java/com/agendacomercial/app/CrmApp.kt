@@ -41,6 +41,7 @@ import java.util.Calendar
 import java.util.Date
 import java.util.Locale
 import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
 
 private sealed class Screen {
@@ -2241,6 +2242,10 @@ private fun BudgetScreen(
     var pendingLines by remember {
         mutableStateOf<List<BudgetLine>>(emptyList())
     }
+    var exporting by remember {
+        mutableStateOf(false)
+    }
+    val exportScope = rememberCoroutineScope()
 
     val filteredProducts = remember(search) {
         if (search.isBlank()) {
@@ -2260,19 +2265,37 @@ private fun BudgetScreen(
         )
     ) { uri ->
         if (uri != null && pendingLines.isNotEmpty()) {
-            val ok = BudgetXlsxExporter.write(
-                context = context,
-                uri = uri,
-                client = client,
-                lines = pendingLines
-            )
+            exporting = true
 
-            Toast.makeText(
-                context,
-                if (ok) "Presupuesto Excel guardado"
-                else "No se ha podido crear el presupuesto",
-                Toast.LENGTH_LONG
-            ).show()
+            exportScope.launch {
+                val result = BudgetXlsxExporter.write(
+                    context = context,
+                    uri = uri,
+                    client = client,
+                    lines = pendingLines
+                )
+
+                exporting = false
+
+                val message =
+                    if (!result.success) {
+                        "No se ha podido crear el presupuesto"
+                    } else if (result.imagesIncluded == result.productCount) {
+                        "Presupuesto guardado con fotos"
+                    } else {
+                        "Presupuesto guardado · " +
+                            result.imagesIncluded +
+                            " de " +
+                            result.productCount +
+                            " fotos incluidas"
+                    }
+
+                Toast.makeText(
+                    context,
+                    message,
+                    Toast.LENGTH_LONG
+                ).show()
+            }
         }
     }
 
@@ -2476,7 +2499,7 @@ private fun BudgetScreen(
 
             item {
                 Button(
-                    enabled = canGenerate,
+                    enabled = canGenerate && !exporting,
                     onClick = {
                         val lines = selected.mapNotNull { (id, draft) ->
                             val product = PaSolaBudgetCatalog
@@ -2523,9 +2546,13 @@ private fun BudgetScreen(
                     modifier = Modifier.fillMaxWidth()
                 ) {
                     Text(
-                        "Crear Excel de presupuesto (" +
-                            selected.size +
-                            " productos)"
+                        if (exporting) {
+                            "Creando Excel y descargando fotos…"
+                        } else {
+                            "Crear Excel de presupuesto (" +
+                                selected.size +
+                                " productos)"
+                        }
                     )
                 }
             }
