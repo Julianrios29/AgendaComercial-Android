@@ -7,6 +7,8 @@ import android.content.ActivityNotFoundException
 import android.content.Context
 import android.content.Intent
 import android.graphics.BitmapFactory
+import android.location.Geocoder
+import android.location.Location
 import android.net.Uri
 import android.speech.RecognizerIntent
 import android.widget.Toast
@@ -38,6 +40,8 @@ import java.text.SimpleDateFormat
 import java.util.Calendar
 import java.util.Date
 import java.util.Locale
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.withContext
 
 private sealed class Screen {
     data object Agenda : Screen()
@@ -51,6 +55,8 @@ private sealed class Screen {
     data class NewOrder(val id: Long) : Screen()
     data class BeforeVisit(val clientId: Long, val visitId: Long?) : Screen()
     data class InVisit(val clientId: Long, val visitId: Long?) : Screen()
+    data class AfterVisit(val clientId: Long) : Screen()
+    data class Suggestions(val clientId: Long) : Screen()
 }
 
 @Composable
@@ -194,7 +200,23 @@ fun CrmApp(vm: AppViewModel) {
                         clientId = s.clientId,
                         visitId = s.visitId,
                         back = { screen = Screen.BeforeVisit(s.clientId, s.visitId) },
-                        saved = { screen = Screen.Detail(s.clientId) }
+                        saved = { screen = Screen.AfterVisit(s.clientId) }
+                    )
+
+                    is Screen.AfterVisit -> AfterVisitScreen(
+                        vm = vm,
+                        clientId = s.clientId,
+                        suggestions = { screen = Screen.Suggestions(s.clientId) },
+                        openParty = { screen = Screen.Detail(s.clientId) },
+                        agenda = { screen = Screen.Agenda }
+                    )
+
+                    is Screen.Suggestions -> SuggestionsScreen(
+                        vm = vm,
+                        clientId = s.clientId,
+                        back = { screen = Screen.AfterVisit(s.clientId) },
+                        openClient = { screen = Screen.Detail(it) },
+                        agenda = { screen = Screen.Agenda }
                     )
                 }
             }
@@ -1152,6 +1174,435 @@ private fun BeforeVisitScreen(
 
         item { Spacer(Modifier.height(24.dp)) }
     }
+}
+
+private data class NearbyClientSuggestion(
+    val client: Client,
+    val distanceKm: Float?
+)
+
+private data class ProspectSearch(
+    val title: String,
+    val query: String,
+    val description: String
+)
+
+@OptIn(ExperimentalMaterial3Api::class)
+@Composable
+private fun AfterVisitScreen(
+    vm: AppViewModel,
+    clientId: Long,
+    suggestions: () -> Unit,
+    openParty: () -> Unit,
+    agenda: () -> Unit
+) {
+    val party = remember(clientId, vm.clients, vm.prospects) {
+        vm.client(clientId)
+    } ?: return
+
+    Column(Modifier.fillMaxSize()) {
+        TopAppBar(
+            title = {
+                Text(
+                    "Actividad guardada",
+                    color = CorporateGold,
+                    fontWeight = FontWeight.Bold
+                )
+            }
+        )
+
+        Column(
+            Modifier
+                .fillMaxWidth()
+                .padding(20.dp),
+            verticalArrangement = Arrangement.spacedBy(14.dp)
+        ) {
+            Card(
+                colors = CardDefaults.cardColors(
+                    containerColor = partyContainerColor(party.isProspect),
+                    contentColor = Color.White
+                )
+            ) {
+                Column(
+                    Modifier.padding(16.dp),
+                    verticalArrangement = Arrangement.spacedBy(4.dp)
+                ) {
+                    Text(
+                        party.name,
+                        style = MaterialTheme.typography.titleLarge,
+                        fontWeight = FontWeight.Bold
+                    )
+                    Text(
+                        if (party.isProspect) "Prospección registrada"
+                        else "Visita registrada"
+                    )
+                    val address = partyAddress(party)
+                    if (address.isNotBlank()) {
+                        Text(address)
+                    }
+                }
+            }
+
+            Text(
+                "¿Quieres aprovechar que estás en esta zona?",
+                style = MaterialTheme.typography.titleMedium,
+                fontWeight = FontWeight.Bold
+            )
+
+            Button(
+                onClick = suggestions,
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .heightIn(min = 58.dp)
+            ) {
+                Text("Sugerencias cerca")
+            }
+
+            Text(
+                "Busca clientes que ya tienes próximos y posibles nuevas prospecciones de hostelería.",
+                style = MaterialTheme.typography.bodyMedium
+            )
+
+            OutlinedButton(
+                onClick = openParty,
+                modifier = Modifier.fillMaxWidth()
+            ) {
+                Text("Volver a la ficha")
+            }
+
+            OutlinedButton(
+                onClick = agenda,
+                modifier = Modifier.fillMaxWidth()
+            ) {
+                Text("Volver a Agenda")
+            }
+        }
+    }
+}
+
+@OptIn(ExperimentalMaterial3Api::class)
+@Composable
+private fun SuggestionsScreen(
+    vm: AppViewModel,
+    clientId: Long,
+    back: () -> Unit,
+    openClient: (Long) -> Unit,
+    agenda: () -> Unit
+) {
+    val context = LocalContext.current
+    val source = remember(clientId, vm.clients, vm.prospects) {
+        vm.client(clientId)
+    } ?: return
+
+    var nearbyClients by remember(clientId, vm.clients) {
+        mutableStateOf<List<NearbyClientSuggestion>>(emptyList())
+    }
+    var loadingNearby by remember(clientId, vm.clients) {
+        mutableStateOf(true)
+    }
+
+    LaunchedEffect(clientId, vm.clients) {
+        loadingNearby = true
+        nearbyClients = findNearbyClients(
+            context = context,
+            origin = source,
+            clients = vm.clients
+        )
+        loadingNearby = false
+    }
+
+    val anchor = partyAddress(source).ifBlank {
+        source.city.ifBlank { source.name }
+    }
+
+    val prospectSearches = remember(anchor) {
+        listOf(
+            ProspectSearch(
+                title = "Restaurantes · menú ~20 €",
+                query = "restaurantes menú 20 euros cocina de calidad",
+                description = "Restaurantes de ticket medio y cocina cuidada."
+            ),
+            ProspectSearch(
+                title = "Restauración media-alta",
+                query = "restaurantes bistró gastronómico cocina de autor",
+                description = "Bistrós y restaurantes con producto y presentación de nivel medio-alto."
+            ),
+            ProspectSearch(
+                title = "Hamburgueserías gourmet",
+                query = "hamburguesería gourmet",
+                description = "Locales de hamburguesa premium donde encaje un pan de alta calidad."
+            ),
+            ProspectSearch(
+                title = "Frankfurt gourmet",
+                query = "frankfurt gourmet hot dog gourmet",
+                description = "Frankfurts y hot dogs de concepto cuidado o premium."
+            ),
+            ProspectSearch(
+                title = "Brunch y cafetería premium",
+                query = "brunch cafetería premium restaurante",
+                description = "Locales con bocadillos, tostadas y oferta gastronómica cuidada."
+            ),
+            ProspectSearch(
+                title = "Pan premium / cocina de autor",
+                query = "restaurante cocina de autor pan artesano premium",
+                description = "Candidatos con potencial para consumir pan de muy alta calidad."
+            )
+        )
+    }
+
+    Column(Modifier.fillMaxSize()) {
+        TopAppBar(
+            title = {
+                Column {
+                    Text(
+                        "Sugerencias",
+                        color = CorporateGold,
+                        fontWeight = FontWeight.Bold
+                    )
+                    Text(
+                        source.name,
+                        style = MaterialTheme.typography.labelLarge
+                    )
+                }
+            },
+            navigationIcon = {
+                TextButton(onClick = back) { Text("<") }
+            }
+        )
+
+        LazyColumn(
+            contentPadding = PaddingValues(16.dp),
+            verticalArrangement = Arrangement.spacedBy(10.dp)
+        ) {
+            item {
+                Text(
+                    "Zona de referencia",
+                    color = CorporateGold,
+                    fontWeight = FontWeight.Bold
+                )
+                Text(anchor)
+            }
+
+            item {
+                HeadingNoPadding("Clientes tuyos cerca")
+            }
+
+            if (loadingNearby) {
+                item {
+                    LinearProgressIndicator(Modifier.fillMaxWidth())
+                    Text(
+                        "Calculando cercanía por las direcciones guardadas…",
+                        style = MaterialTheme.typography.bodySmall
+                    )
+                }
+            } else if (nearbyClients.isEmpty()) {
+                item {
+                    Text(
+                        "No he podido localizar otros clientes cercanos con las direcciones guardadas."
+                    )
+                }
+            } else {
+                items(nearbyClients, key = { "near_" + it.client.id }) { suggestion ->
+                    Card(
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .clickable { openClient(suggestion.client.id) },
+                        colors = CardDefaults.cardColors(
+                            containerColor = ClientGreenSoft,
+                            contentColor = Color.White
+                        )
+                    ) {
+                        Column(
+                            Modifier.padding(14.dp),
+                            verticalArrangement = Arrangement.spacedBy(3.dp)
+                        ) {
+                            Text(
+                                suggestion.client.name,
+                                fontWeight = FontWeight.Bold
+                            )
+                            if (suggestion.client.contactPerson.isNotBlank()) {
+                                Text("Contacto: " + suggestion.client.contactPerson)
+                            }
+                            if (suggestion.client.phone.isNotBlank()) {
+                                Text("Tel: " + suggestion.client.phone)
+                            }
+                            val distance = suggestion.distanceKm
+                            Text(
+                                if (distance != null) {
+                                    String.format(
+                                        Locale("es", "ES"),
+                                        "%.1f km aprox.",
+                                        distance
+                                    )
+                                } else {
+                                    "Misma zona/ciudad"
+                                },
+                                color = ClientGreen,
+                                fontWeight = FontWeight.Bold
+                            )
+                        }
+                    }
+                }
+            }
+
+            item {
+                Spacer(Modifier.height(4.dp))
+                HeadingNoPadding("Nuevas prospecciones")
+                Text(
+                    "Estas búsquedas se abren en Maps usando como referencia el local que acabas de visitar. Son candidatos comerciales; conviene comprobar carta, precio y encaje antes de visitarlos.",
+                    style = MaterialTheme.typography.bodySmall
+                )
+            }
+
+            items(prospectSearches, key = { it.title }) { search ->
+                Card(
+                    colors = CardDefaults.cardColors(
+                        containerColor = ProspectBlueSoft,
+                        contentColor = Color.White
+                    )
+                ) {
+                    Column(
+                        Modifier.padding(14.dp),
+                        verticalArrangement = Arrangement.spacedBy(6.dp)
+                    ) {
+                        Text(
+                            search.title,
+                            fontWeight = FontWeight.Bold
+                        )
+                        Text(search.description)
+                        Button(
+                            onClick = {
+                                openMapSearch(
+                                    context = context,
+                                    query = search.query,
+                                    anchor = anchor
+                                )
+                            },
+                            modifier = Modifier.fillMaxWidth()
+                        ) {
+                            Text("Buscar cerca")
+                        }
+                    }
+                }
+            }
+
+            item {
+                OutlinedButton(
+                    onClick = agenda,
+                    modifier = Modifier.fillMaxWidth()
+                ) {
+                    Text("Volver a Agenda")
+                }
+            }
+
+            item { Spacer(Modifier.height(20.dp)) }
+        }
+    }
+}
+
+private fun partyAddress(client: Client): String {
+    return listOf(
+        client.address,
+        client.postalCode,
+        client.city
+    ).filter(String::isNotBlank).joinToString(", ")
+}
+
+@Suppress("DEPRECATION")
+private suspend fun findNearbyClients(
+    context: Context,
+    origin: Client,
+    clients: List<Client>
+): List<NearbyClientSuggestion> = withContext(Dispatchers.IO) {
+    val others = clients.filter { it.id != origin.id && !it.isProspect }
+
+    if (others.isEmpty()) {
+        return@withContext emptyList()
+    }
+
+    val fallback = others
+        .filter {
+            origin.city.isNotBlank() &&
+                it.city.equals(origin.city, ignoreCase = true)
+        }
+        .take(6)
+        .map { NearbyClientSuggestion(it, null) }
+
+    val originQuery = partyAddress(origin)
+    if (
+        originQuery.isBlank() ||
+        !Geocoder.isPresent()
+    ) {
+        return@withContext fallback
+    }
+
+    runCatching {
+        val geocoder = Geocoder(context, Locale("es", "ES"))
+        val originAddress = geocoder
+            .getFromLocationName(originQuery, 1)
+            ?.firstOrNull()
+            ?: return@runCatching fallback
+
+        val originLocation = Location("origin").apply {
+            latitude = originAddress.latitude
+            longitude = originAddress.longitude
+        }
+
+        others.mapNotNull { client ->
+            val query = partyAddress(client)
+            if (query.isBlank()) {
+                return@mapNotNull null
+            }
+
+            val address = runCatching {
+                geocoder.getFromLocationName(query, 1)?.firstOrNull()
+            }.getOrNull() ?: return@mapNotNull null
+
+            val target = Location("client").apply {
+                latitude = address.latitude
+                longitude = address.longitude
+            }
+
+            NearbyClientSuggestion(
+                client = client,
+                distanceKm = originLocation.distanceTo(target) / 1000f
+            )
+        }
+            .sortedBy { it.distanceKm ?: Float.MAX_VALUE }
+            .take(6)
+            .ifEmpty { fallback }
+    }.getOrElse {
+        fallback
+    }
+}
+
+private fun openMapSearch(
+    context: Context,
+    query: String,
+    anchor: String
+) {
+    val fullQuery = "$query cerca de $anchor"
+    val geoUri = Uri.parse(
+        "geo:0,0?q=" + Uri.encode(fullQuery)
+    )
+
+    val mapIntent = Intent(
+        Intent.ACTION_VIEW,
+        geoUri
+    )
+
+    if (mapIntent.resolveActivity(context.packageManager) != null) {
+        context.startActivity(mapIntent)
+        return
+    }
+
+    val webUri = Uri.parse(
+        "https://www.google.com/search?q=" +
+            Uri.encode(fullQuery)
+    )
+    context.startActivity(
+        Intent(Intent.ACTION_VIEW, webUri)
+    )
 }
 
 @OptIn(ExperimentalMaterial3Api::class)
