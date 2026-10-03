@@ -141,19 +141,25 @@ fun CrmApp(vm: AppViewModel) {
 
                     Screen.Summary -> DailySummaryScreen(vm)
 
-                    is Screen.NewParty -> PartyFormScreen(
-                        vm = vm,
-                        party = null,
-                        newIsProspect = s.prospect,
-                        back = {
-                            screen = if (s.prospect) Screen.Prospects else Screen.Clients
-                        },
-                        saved = { id ->
-                            screen =
-                                if (s.prospect) Screen.AfterVisit(id)
-                                else Screen.Detail(id)
+                    is Screen.NewParty -> {
+                        if (s.prospect) {
+                            NewProspectScreen(
+                                vm = vm,
+                                back = { screen = Screen.Prospects },
+                                saved = { screen = Screen.Summary },
+                                suggestions = { id -> screen = Screen.Suggestions(id) },
+                                schedule = { id -> screen = Screen.NewVisit(id) }
+                            )
+                        } else {
+                            PartyFormScreen(
+                                vm = vm,
+                                party = null,
+                                newIsProspect = false,
+                                back = { screen = Screen.Clients },
+                                saved = { id -> screen = Screen.Detail(id) }
+                            )
                         }
-                    )
+                    }
 
                     is Screen.Detail -> PartyDetailScreen(
                         vm = vm,
@@ -1746,6 +1752,226 @@ private fun InVisitScreen(
                     ) {
                         Text("Guardar prospección conseguida y pasar a Clientes")
                     }
+                }
+            }
+
+            item { Spacer(Modifier.height(24.dp)) }
+        }
+    }
+}
+
+@OptIn(ExperimentalMaterial3Api::class)
+@Composable
+private fun NewProspectScreen(
+    vm: AppViewModel,
+    back: () -> Unit,
+    saved: (Long) -> Unit,
+    suggestions: (Long) -> Unit,
+    schedule: (Long) -> Unit
+) {
+    var name by remember { mutableStateOf("") }
+    var business by remember { mutableStateOf("") }
+    var nif by remember { mutableStateOf("") }
+    var bankAccount by remember { mutableStateOf("") }
+    var contact by remember { mutableStateOf("") }
+    var phone by remember { mutableStateOf("") }
+    var email by remember { mutableStateOf("") }
+    var address by remember { mutableStateOf("") }
+    var city by remember { mutableStateOf("") }
+    var postal by remember { mutableStateOf("") }
+    var observations by remember { mutableStateOf("") }
+
+    var conversation by remember { mutableStateOf("") }
+    var needs by remember { mutableStateOf("") }
+    var commitments by remember { mutableStateOf("") }
+    var visitNotes by remember { mutableStateOf("") }
+    var saving by remember { mutableStateOf(false) }
+
+    fun createCompletedProspect(): Long {
+        saving = true
+        return vm.addCompletedProspect(
+            name = name.trim(),
+            business = business.trim(),
+            nif = nif.trim(),
+            bankAccount = bankAccount.trim(),
+            contact = contact.trim(),
+            phone = phone.trim(),
+            email = email.trim(),
+            address = address.trim(),
+            city = city.trim(),
+            postal = postal.trim(),
+            observations = observations.trim(),
+            conversationSummary = conversation.trim(),
+            needs = needs.trim(),
+            commitments = commitments.trim(),
+            visitNotes = visitNotes.trim()
+        )
+    }
+
+    Column(Modifier.fillMaxSize()) {
+        TopAppBar(
+            title = {
+                Text(
+                    "Nueva prospección",
+                    color = ProspectBlue,
+                    fontWeight = FontWeight.Bold
+                )
+            },
+            navigationIcon = {
+                TextButton(onClick = back) { Text("<") }
+            }
+        )
+
+        LazyColumn(
+            Modifier.padding(horizontal = 16.dp),
+            verticalArrangement = Arrangement.spacedBy(8.dp)
+        ) {
+            item {
+                Text(
+                    "Datos del local",
+                    color = CorporateGold,
+                    style = MaterialTheme.typography.titleMedium,
+                    fontWeight = FontWeight.Bold
+                )
+            }
+
+            item { VoiceField("Nombre del local *", name, { name = it }) }
+            item { VoiceField("Nombre de la empresa", business, { business = it }) }
+            item { VoiceField("NIF", nif, { nif = it }) }
+            item {
+                VoiceField(
+                    "Número de cuenta / IBAN",
+                    bankAccount,
+                    { bankAccount = it }
+                )
+            }
+            item { VoiceField("Persona de contacto", contact, { contact = it }) }
+            item {
+                VoiceField(
+                    "Teléfono",
+                    phone,
+                    { phone = it },
+                    keyboardType = KeyboardType.Phone,
+                    digitsOnlyVoice = true
+                )
+            }
+            item {
+                VoiceField(
+                    "Email",
+                    email,
+                    { email = it },
+                    keyboardType = KeyboardType.Email
+                )
+            }
+            item { VoiceField("Dirección", address, { address = it }) }
+            item { VoiceField("Ciudad", city, { city = it }) }
+            item {
+                VoiceField(
+                    "Código postal",
+                    postal,
+                    { postal = it },
+                    keyboardType = KeyboardType.Number,
+                    digitsOnlyVoice = true
+                )
+            }
+            item {
+                VoiceField(
+                    label = "Observaciones del local",
+                    value = observations,
+                    onValueChange = { observations = it },
+                    appendVoice = true,
+                    minLines = 3
+                )
+            }
+
+            item {
+                Spacer(Modifier.height(8.dp))
+                Text(
+                    "Prospección realizada",
+                    color = CorporateGold,
+                    style = MaterialTheme.typography.titleMedium,
+                    fontWeight = FontWeight.Bold
+                )
+                Text(
+                    "Lo que registres aquí quedará reflejado hoy en Resumen.",
+                    style = MaterialTheme.typography.bodySmall
+                )
+            }
+
+            item {
+                VoiceField(
+                    label = "Resumen de la conversación",
+                    value = conversation,
+                    onValueChange = { conversation = it },
+                    appendVoice = true,
+                    minLines = 3
+                )
+            }
+            item {
+                VoiceField(
+                    label = "Necesidades / oportunidades",
+                    value = needs,
+                    onValueChange = { needs = it },
+                    appendVoice = true,
+                    minLines = 3
+                )
+            }
+            item {
+                VoiceField(
+                    label = "Compromisos / próximos pasos",
+                    value = commitments,
+                    onValueChange = { commitments = it },
+                    appendVoice = true,
+                    minLines = 3
+                )
+            }
+            item {
+                VoiceField(
+                    label = "Notas de la prospección",
+                    value = visitNotes,
+                    onValueChange = { visitNotes = it },
+                    appendVoice = true,
+                    minLines = 3
+                )
+            }
+
+            item {
+                Spacer(Modifier.height(6.dp))
+                Button(
+                    enabled = name.isNotBlank() && !saving,
+                    onClick = {
+                        val id = createCompletedProspect()
+                        saved(id)
+                    },
+                    modifier = Modifier.fillMaxWidth()
+                ) {
+                    Text("Guardar prospección realizada")
+                }
+            }
+
+            item {
+                OutlinedButton(
+                    enabled = name.isNotBlank() && !saving,
+                    onClick = {
+                        val id = createCompletedProspect()
+                        suggestions(id)
+                    },
+                    modifier = Modifier.fillMaxWidth()
+                ) {
+                    Text("Guardar y ver Sugerencias")
+                }
+            }
+
+            item {
+                OutlinedButton(
+                    enabled = name.isNotBlank() && !saving,
+                    onClick = {
+                        val id = createCompletedProspect()
+                        schedule(id)
+                    },
+                    modifier = Modifier.fillMaxWidth()
+                ) {
+                    Text("Guardar y agendar nueva cita")
                 }
             }
 
