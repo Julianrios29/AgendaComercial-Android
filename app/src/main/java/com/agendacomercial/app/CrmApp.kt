@@ -728,15 +728,49 @@ private fun PartyDetailScreen(
     }
 }
 
+private enum class SummaryPeriodMode {
+    DAY,
+    LAST_TWO_DAYS,
+    WEEK,
+    MONTH,
+    CUSTOM
+}
+
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
 private fun DailySummaryScreen(vm: AppViewModel) {
     val context = LocalContext.current
-    val range = remember { todayRange() }
-    val visits = remember(vm.clients, vm.prospects, vm.agenda) {
+    var mode by remember { mutableStateOf(SummaryPeriodMode.DAY) }
+    var anchorDate by remember { mutableStateOf(System.currentTimeMillis()) }
+    var customStart by remember { mutableStateOf(startOfDay(System.currentTimeMillis())) }
+    var customEnd by remember { mutableStateOf(endOfDay(System.currentTimeMillis())) }
+
+    val range = remember(mode, anchorDate, customStart, customEnd) {
+        summaryRange(
+            mode = mode,
+            anchorDate = anchorDate,
+            customStart = customStart,
+            customEnd = customEnd
+        )
+    }
+
+    val visits = remember(
+        range.first,
+        range.second,
+        vm.clients,
+        vm.prospects,
+        vm.agenda
+    ) {
         vm.dailyVisits(range.first, range.second)
     }
-    val orders = remember(vm.clients, vm.prospects, vm.agenda) {
+
+    val orders = remember(
+        range.first,
+        range.second,
+        vm.clients,
+        vm.prospects,
+        vm.agenda
+    ) {
         vm.dailyOrders(range.first, range.second)
     }
 
@@ -750,12 +784,14 @@ private fun DailySummaryScreen(vm: AppViewModel) {
                 context = context,
                 uri = uri,
                 visits = visits,
-                dayStart = range.first
+                rangeStart = range.first,
+                rangeEnd = range.second
             )
 
             Toast.makeText(
                 context,
-                if (ok) "Excel guardado correctamente" else "No se ha podido crear el Excel",
+                if (ok) "Excel guardado correctamente"
+                else "No se ha podido crear el Excel",
                 Toast.LENGTH_LONG
             ).show()
         }
@@ -764,13 +800,45 @@ private fun DailySummaryScreen(vm: AppViewModel) {
     val prospections = visits.filter { it.isProspection }
     val clientVisits = visits.filterNot { it.isProspection }
     val orderTotal = orders.sumOf { it.total }
+    val multipleDays = !sameDay(range.first, range.second)
+
+    fun chooseAnchorDate() {
+        showDatePicker(context, anchorDate) {
+            anchorDate = it
+        }
+    }
+
+    fun chooseCustomStart() {
+        showDatePicker(context, customStart) {
+            customStart = startOfDay(it)
+            if (customStart > customEnd) {
+                customEnd = endOfDay(it)
+            }
+        }
+    }
+
+    fun chooseCustomEnd() {
+        showDatePicker(context, customEnd) {
+            customEnd = endOfDay(it)
+            if (customEnd < customStart) {
+                customStart = startOfDay(it)
+            }
+        }
+    }
 
     Column(Modifier.fillMaxSize()) {
         TopAppBar(
             title = {
                 Column {
-                    Text("PA SOLÀ", color = CorporateGold, fontWeight = FontWeight.Bold)
-                    Text("Resumen del día", style = MaterialTheme.typography.labelLarge)
+                    Text(
+                        "PA SOLÀ",
+                        color = CorporateGold,
+                        fontWeight = FontWeight.Bold
+                    )
+                    Text(
+                        "Resumen por fechas",
+                        style = MaterialTheme.typography.labelLarge
+                    )
                 }
             }
         )
@@ -781,10 +849,112 @@ private fun DailySummaryScreen(vm: AppViewModel) {
         ) {
             item {
                 Text(
-                    fullDate(range.first),
-                    style = MaterialTheme.typography.titleLarge,
+                    "Periodo",
+                    color = CorporateGold,
+                    style = MaterialTheme.typography.titleMedium,
                     fontWeight = FontWeight.Bold
                 )
+            }
+
+            item {
+                LazyRow(
+                    horizontalArrangement = Arrangement.spacedBy(8.dp)
+                ) {
+                    item {
+                        FilterChip(
+                            selected = mode == SummaryPeriodMode.DAY,
+                            onClick = { mode = SummaryPeriodMode.DAY },
+                            label = { Text("Día") }
+                        )
+                    }
+                    item {
+                        FilterChip(
+                            selected = mode == SummaryPeriodMode.LAST_TWO_DAYS,
+                            onClick = { mode = SummaryPeriodMode.LAST_TWO_DAYS },
+                            label = { Text("2 días") }
+                        )
+                    }
+                    item {
+                        FilterChip(
+                            selected = mode == SummaryPeriodMode.WEEK,
+                            onClick = { mode = SummaryPeriodMode.WEEK },
+                            label = { Text("Semana") }
+                        )
+                    }
+                    item {
+                        FilterChip(
+                            selected = mode == SummaryPeriodMode.MONTH,
+                            onClick = { mode = SummaryPeriodMode.MONTH },
+                            label = { Text("Mes") }
+                        )
+                    }
+                    item {
+                        FilterChip(
+                            selected = mode == SummaryPeriodMode.CUSTOM,
+                            onClick = { mode = SummaryPeriodMode.CUSTOM },
+                            label = { Text("Fechas") }
+                        )
+                    }
+                }
+            }
+
+            if (mode == SummaryPeriodMode.CUSTOM) {
+                item {
+                    Row(
+                        horizontalArrangement = Arrangement.spacedBy(8.dp)
+                    ) {
+                        OutlinedButton(
+                            onClick = { chooseCustomStart() },
+                            modifier = Modifier.weight(1f)
+                        ) {
+                            Text("Desde\n" + shortDate(customStart))
+                        }
+
+                        OutlinedButton(
+                            onClick = { chooseCustomEnd() },
+                            modifier = Modifier.weight(1f)
+                        ) {
+                            Text("Hasta\n" + shortDate(customEnd))
+                        }
+                    }
+                }
+            } else {
+                item {
+                    OutlinedButton(
+                        onClick = { chooseAnchorDate() },
+                        modifier = Modifier.fillMaxWidth()
+                    ) {
+                        Text(
+                            when (mode) {
+                                SummaryPeriodMode.DAY -> "Elegir día"
+                                SummaryPeriodMode.LAST_TWO_DAYS -> "Elegir día final"
+                                SummaryPeriodMode.WEEK -> "Elegir una fecha de la semana"
+                                SummaryPeriodMode.MONTH -> "Elegir una fecha del mes"
+                                SummaryPeriodMode.CUSTOM -> "Elegir fechas"
+                            }
+                        )
+                    }
+                }
+            }
+
+            item {
+                Card(
+                    colors = CardDefaults.cardColors(
+                        containerColor = CorporateSurfaceAlt
+                    )
+                ) {
+                    Column(Modifier.padding(14.dp)) {
+                        Text(
+                            summaryPeriodTitle(mode),
+                            color = CorporateGold,
+                            fontWeight = FontWeight.Bold
+                        )
+                        Text(
+                            summaryRangeLabel(range.first, range.second),
+                            style = MaterialTheme.typography.titleMedium
+                        )
+                    }
+                }
             }
 
             item {
@@ -813,7 +983,10 @@ private fun DailySummaryScreen(vm: AppViewModel) {
             item {
                 Card {
                     Column(Modifier.padding(14.dp)) {
-                        Text("Venta del día", fontWeight = FontWeight.Bold)
+                        Text(
+                            "Venta del periodo",
+                            fontWeight = FontWeight.Bold
+                        )
                         Text(
                             money(orderTotal),
                             style = MaterialTheme.typography.headlineSmall,
@@ -826,49 +999,71 @@ private fun DailySummaryScreen(vm: AppViewModel) {
             item {
                 Button(
                     onClick = {
-                        val fileDate = SimpleDateFormat(
+                        val formatter = SimpleDateFormat(
                             "yyyy-MM-dd",
                             Locale("es", "ES")
-                        ).format(Date(range.first))
+                        )
+                        val startName = formatter.format(Date(range.first))
+                        val endName = formatter.format(Date(range.second))
+                        val fileName =
+                            if (startName == endName) {
+                                "Visitas_$startName.xlsx"
+                            } else {
+                                "Visitas_${startName}_a_${endName}.xlsx"
+                            }
 
-                        excelLauncher.launch("Visitas_$fileDate.xlsx")
+                        excelLauncher.launch(fileName)
                     },
                     modifier = Modifier.fillMaxWidth()
                 ) {
-                    Text("Exportar Excel de visitas")
+                    Text("Exportar Excel del periodo")
                 }
             }
 
-            item { HeadingNoPadding("Prospecciones realizadas") }
+            item {
+                HeadingNoPadding("Prospecciones realizadas")
+            }
 
             if (prospections.isEmpty()) {
-                item { Text("No hay prospecciones realizadas hoy.") }
+                item {
+                    Text("No hay prospecciones realizadas en este periodo.")
+                }
             }
 
             items(prospections, key = { "p" + it.id }) { activity ->
                 ActivityCard(
                     activity = activity,
-                    isProspection = true
+                    isProspection = true,
+                    showDate = multipleDays
                 )
             }
 
-            item { HeadingNoPadding("Visitas a clientes") }
+            item {
+                HeadingNoPadding("Visitas a clientes")
+            }
 
             if (clientVisits.isEmpty()) {
-                item { Text("No hay visitas a clientes realizadas hoy.") }
+                item {
+                    Text("No hay visitas a clientes realizadas en este periodo.")
+                }
             }
 
             items(clientVisits, key = { "v" + it.id }) { activity ->
                 ActivityCard(
                     activity = activity,
-                    isProspection = false
+                    isProspection = false,
+                    showDate = multipleDays
                 )
             }
 
-            item { HeadingNoPadding("Pedidos del día") }
+            item {
+                HeadingNoPadding("Pedidos")
+            }
 
             if (orders.isEmpty()) {
-                item { Text("No hay pedidos creados hoy.") }
+                item {
+                    Text("No hay pedidos creados en este periodo.")
+                }
             }
 
             items(orders, key = { "o" + it.id }) { order ->
@@ -883,16 +1078,23 @@ private fun DailySummaryScreen(vm: AppViewModel) {
                         verticalArrangement = Arrangement.spacedBy(3.dp)
                     ) {
                         Text(
-                            timeOnly(order.createdAt) + " · " + order.localName,
+                            (if (multipleDays) {
+                                dateTime(order.createdAt)
+                            } else {
+                                timeOnly(order.createdAt)
+                            }) + " · " + order.localName,
                             fontWeight = FontWeight.Bold,
                             color = Color.White
                         )
+
                         if (order.contactPerson.isNotBlank()) {
                             Text("Contacto: " + order.contactPerson)
                         }
+
                         if (order.phone.isNotBlank()) {
                             Text("Teléfono: " + order.phone)
                         }
+
                         Text(
                             "Pedido: " + money(order.total),
                             fontWeight = FontWeight.Bold
@@ -902,7 +1104,9 @@ private fun DailySummaryScreen(vm: AppViewModel) {
                 }
             }
 
-            item { Spacer(Modifier.height(20.dp)) }
+            item {
+                Spacer(Modifier.height(20.dp))
+            }
         }
     }
 }
@@ -934,7 +1138,8 @@ private fun SummaryMetric(
 @Composable
 private fun ActivityCard(
     activity: DailyVisitActivity,
-    isProspection: Boolean
+    isProspection: Boolean,
+    showDate: Boolean = false
 ) {
     Card(
         colors = CardDefaults.cardColors(
@@ -947,7 +1152,11 @@ private fun ActivityCard(
             verticalArrangement = Arrangement.spacedBy(3.dp)
         ) {
             Text(
-                timeOnly(activity.completedAt) + " · " + activity.localName,
+                (if (showDate) {
+                    dateTime(activity.completedAt)
+                } else {
+                    timeOnly(activity.completedAt)
+                }) + " · " + activity.localName,
                 fontWeight = FontWeight.Bold,
                 color = Color.White
             )
