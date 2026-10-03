@@ -80,16 +80,50 @@ class AppViewModel(app: Application) : AndroidViewModel(app) {
             isProspect
         )
 
-        if (isProspect) {
-            db.saveVisitReport(
-                visitId = null,
-                clientId = id,
-                conversationSummary = "Prospección nueva registrada",
-                needs = "",
-                commitments = "",
-                notes = notes
-            )
-        }
+        refresh()
+        return id
+    }
+
+    fun addCompletedProspect(
+        name: String,
+        business: String,
+        nif: String,
+        bankAccount: String,
+        contact: String,
+        phone: String,
+        email: String,
+        address: String,
+        city: String,
+        postal: String,
+        observations: String,
+        conversationSummary: String,
+        needs: String,
+        commitments: String,
+        visitNotes: String
+    ): Long {
+        val id = db.addClient(
+            name,
+            business,
+            nif,
+            bankAccount,
+            contact,
+            phone,
+            email,
+            address,
+            city,
+            postal,
+            observations,
+            true
+        )
+
+        db.saveVisitReport(
+            visitId = null,
+            clientId = id,
+            conversationSummary = conversationSummary,
+            needs = needs,
+            commitments = commitments,
+            notes = visitNotes
+        )
 
         refresh()
         return id
