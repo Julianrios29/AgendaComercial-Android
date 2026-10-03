@@ -27,7 +27,6 @@ import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.asImageBitmap
 import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.platform.LocalContext
-import androidx.compose.ui.res.painterResource
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.input.KeyboardType
 import androidx.compose.ui.unit.dp
@@ -221,14 +220,33 @@ private fun WeeklyAgendaScreen(vm: AppViewModel, open: (Long, Long) -> Unit) {
                 )
             },
             actions = {
-                Image(
-                    painter = painterResource(id = R.drawable.app_logo),
-                    contentDescription = "Logo Pà Solà",
-                    modifier = Modifier
-                        .padding(end = 10.dp)
-                        .size(46.dp),
-                    contentScale = ContentScale.Fit
-                )
+                val context = LocalContext.current
+                val agendaLogo = remember {
+                    runCatching {
+                        BitmapFactory.decodeResource(
+                            context.resources,
+                            R.drawable.app_logo
+                        )?.asImageBitmap()
+                    }.getOrNull()
+                }
+
+                if (agendaLogo != null) {
+                    Image(
+                        bitmap = agendaLogo,
+                        contentDescription = "Logo Pà Solà",
+                        modifier = Modifier
+                            .padding(end = 10.dp)
+                            .size(46.dp),
+                        contentScale = ContentScale.Fit
+                    )
+                } else {
+                    Text(
+                        "PA SOLÀ",
+                        color = CorporateGold,
+                        fontWeight = FontWeight.Bold,
+                        modifier = Modifier.padding(end = 12.dp)
+                    )
+                }
             }
         )
 
