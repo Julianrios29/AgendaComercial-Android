@@ -211,7 +211,14 @@ private fun WeeklyAgendaScreen(vm: AppViewModel, open: (Long, Long) -> Unit) {
     val visits = vm.agenda.filter { it.scheduledAt in start until end }
 
     Column(Modifier.fillMaxSize()) {
-        TopAppBar(title = { Text("Agenda semanal") })
+        TopAppBar(
+            title = {
+                Column {
+                    Text("PA SOLÀ", color = CorporateGold, fontWeight = FontWeight.Bold)
+                    Text("Agenda semanal", style = MaterialTheme.typography.labelLarge)
+                }
+            }
+        )
 
         Row(
             Modifier
@@ -325,7 +332,12 @@ private fun PartyListScreen(
 
     Column(Modifier.fillMaxSize()) {
         TopAppBar(
-            title = { Text(title) },
+            title = {
+                Column {
+                    Text("PA SOLÀ", color = CorporateGold, fontWeight = FontWeight.Bold)
+                    Text(title, style = MaterialTheme.typography.labelLarge)
+                }
+            },
             actions = { TextButton(onClick = onAdd) { Text(addLabel) } }
         )
 
@@ -659,7 +671,14 @@ private fun DailySummaryScreen(vm: AppViewModel) {
     val orderTotal = orders.sumOf { it.total }
 
     Column(Modifier.fillMaxSize()) {
-        TopAppBar(title = { Text("Resumen del día") })
+        TopAppBar(
+            title = {
+                Column {
+                    Text("PA SOLÀ", color = CorporateGold, fontWeight = FontWeight.Bold)
+                    Text("Resumen del día", style = MaterialTheme.typography.labelLarge)
+                }
+            }
+        )
 
         LazyColumn(
             contentPadding = PaddingValues(16.dp),
