@@ -12,8 +12,8 @@ android {
         applicationId = "com.pasola.agendacomercial"
         minSdk = 23
         targetSdk = 35
-        versionCode = 13
-        versionName = "0.10.3"
+        versionCode = 14
+        versionName = "0.11.0"
     }
 
     buildFeatures { compose = true }
