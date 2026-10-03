@@ -777,7 +777,8 @@ private fun DailySummaryScreen(vm: AppViewModel) {
             items(orders, key = { "o" + it.id }) { order ->
                 Card(
                     colors = CardDefaults.cardColors(
-                        containerColor = ClientGreenSoft
+                        containerColor = ClientGreenSoft,
+                        contentColor = Color.White
                     )
                 ) {
                     Column(
@@ -787,7 +788,7 @@ private fun DailySummaryScreen(vm: AppViewModel) {
                         Text(
                             timeOnly(order.createdAt) + " · " + order.localName,
                             fontWeight = FontWeight.Bold,
-                            color = ClientGreen
+                            color = Color.White
                         )
                         if (order.contactPerson.isNotBlank()) {
                             Text("Contacto: " + order.contactPerson)
@@ -818,7 +819,10 @@ private fun SummaryMetric(
 ) {
     Card(
         modifier = modifier,
-        colors = CardDefaults.cardColors(containerColor = color)
+        colors = CardDefaults.cardColors(
+            containerColor = color,
+            contentColor = Color.White
+        )
     ) {
         Column(
             Modifier.padding(10.dp),
@@ -924,7 +928,7 @@ private fun BeforeVisitScreen(
                         party.name,
                         style = MaterialTheme.typography.titleLarge,
                         fontWeight = FontWeight.Bold,
-                        color = partyAccentColor(party.isProspect)
+                        color = Color.White
                     )
                     if (party.businessName.isNotBlank()) {
                         Text("Empresa: " + party.businessName)
@@ -1941,7 +1945,8 @@ private fun LocalPhotoBox(
             .height(150.dp)
             .clickable(onClick = onClick),
         colors = CardDefaults.cardColors(
-            containerColor = partyContainerColor(isProspect)
+            containerColor = partyContainerColor(isProspect),
+            contentColor = Color.White
         )
     ) {
         Box(
