@@ -204,12 +204,12 @@ object DailyVisitsXlsxExporter {
         }
 
         sb.append("</sheetData>")
-        sb.append("""<mergeCells count="1"><mergeCell ref="A1:J1"/></mergeCells>""")
 
         if (visits.isNotEmpty()) {
             sb.append("""<autoFilter ref="A3:J${visits.size + 3}"/>""")
         }
 
+        sb.append("""<mergeCells count="1"><mergeCell ref="A1:J1"/></mergeCells>""")
         sb.append("</worksheet>")
         return sb.toString()
     }
