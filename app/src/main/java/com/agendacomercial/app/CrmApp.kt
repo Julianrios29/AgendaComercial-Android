@@ -2517,7 +2517,7 @@ private fun BudgetScreen(
                         ).format(Date())
 
                         excelLauncher.launch(
-                            "Presupuesto_$safeClient_$date.xlsx"
+                            "Presupuesto_${safeClient}_${date}.xlsx"
                         )
                     },
                     modifier = Modifier.fillMaxWidth()
