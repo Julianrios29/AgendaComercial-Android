@@ -2981,6 +2981,157 @@ private fun createClientPhotoFile(
     )
 }
 
+private fun startOfDay(value: Long): Long =
+    Calendar.getInstance().apply {
+        timeInMillis = value
+        set(Calendar.HOUR_OF_DAY, 0)
+        set(Calendar.MINUTE, 0)
+        set(Calendar.SECOND, 0)
+        set(Calendar.MILLISECOND, 0)
+    }.timeInMillis
+
+private fun endOfDay(value: Long): Long =
+    Calendar.getInstance().apply {
+        timeInMillis = startOfDay(value)
+        add(Calendar.DAY_OF_YEAR, 1)
+        add(Calendar.MILLISECOND, -1)
+    }.timeInMillis
+
+private fun sameDay(first: Long, second: Long): Boolean {
+    val a = Calendar.getInstance().apply { timeInMillis = first }
+    val b = Calendar.getInstance().apply { timeInMillis = second }
+
+    return a.get(Calendar.YEAR) == b.get(Calendar.YEAR) &&
+        a.get(Calendar.DAY_OF_YEAR) == b.get(Calendar.DAY_OF_YEAR)
+}
+
+private fun shortDate(value: Long): String =
+    SimpleDateFormat(
+        "dd/MM/yyyy",
+        Locale("es", "ES")
+    ).format(Date(value))
+
+private fun summaryRange(
+    mode: SummaryPeriodMode,
+    anchorDate: Long,
+    customStart: Long,
+    customEnd: Long
+): Pair<Long, Long> {
+    return when (mode) {
+        SummaryPeriodMode.DAY -> {
+            startOfDay(anchorDate) to endOfDay(anchorDate)
+        }
+
+        SummaryPeriodMode.LAST_TWO_DAYS -> {
+            val end = endOfDay(anchorDate)
+            val start = Calendar.getInstance().apply {
+                timeInMillis = startOfDay(anchorDate)
+                add(Calendar.DAY_OF_YEAR, -1)
+            }.timeInMillis
+            start to end
+        }
+
+        SummaryPeriodMode.WEEK -> {
+            val start = Calendar.getInstance().apply {
+                timeInMillis = anchorDate
+                firstDayOfWeek = Calendar.MONDAY
+                set(Calendar.DAY_OF_WEEK, Calendar.MONDAY)
+                set(Calendar.HOUR_OF_DAY, 0)
+                set(Calendar.MINUTE, 0)
+                set(Calendar.SECOND, 0)
+                set(Calendar.MILLISECOND, 0)
+            }.timeInMillis
+
+            val end = Calendar.getInstance().apply {
+                timeInMillis = start
+                add(Calendar.DAY_OF_YEAR, 7)
+                add(Calendar.MILLISECOND, -1)
+            }.timeInMillis
+
+            start to end
+        }
+
+        SummaryPeriodMode.MONTH -> {
+            val start = Calendar.getInstance().apply {
+                timeInMillis = anchorDate
+                set(Calendar.DAY_OF_MONTH, 1)
+                set(Calendar.HOUR_OF_DAY, 0)
+                set(Calendar.MINUTE, 0)
+                set(Calendar.SECOND, 0)
+                set(Calendar.MILLISECOND, 0)
+            }.timeInMillis
+
+            val end = Calendar.getInstance().apply {
+                timeInMillis = start
+                add(Calendar.MONTH, 1)
+                add(Calendar.MILLISECOND, -1)
+            }.timeInMillis
+
+            start to end
+        }
+
+        SummaryPeriodMode.CUSTOM -> {
+            val first = minOf(
+                startOfDay(customStart),
+                startOfDay(customEnd)
+            )
+            val last = maxOf(
+                endOfDay(customStart),
+                endOfDay(customEnd)
+            )
+            first to last
+        }
+    }
+}
+
+private fun summaryPeriodTitle(mode: SummaryPeriodMode): String =
+    when (mode) {
+        SummaryPeriodMode.DAY -> "Día seleccionado"
+        SummaryPeriodMode.LAST_TWO_DAYS -> "Últimos 2 días"
+        SummaryPeriodMode.WEEK -> "Semana completa"
+        SummaryPeriodMode.MONTH -> "Mes completo"
+        SummaryPeriodMode.CUSTOM -> "Rango personalizado"
+    }
+
+private fun summaryRangeLabel(start: Long, end: Long): String {
+    return if (sameDay(start, end)) {
+        fullDate(start)
+    } else {
+        shortDate(start) + " – " + shortDate(end)
+    }
+}
+
+private fun showDatePicker(
+    context: Context,
+    current: Long,
+    onSelected: (Long) -> Unit
+) {
+    val cal = Calendar.getInstance().apply {
+        timeInMillis = current
+    }
+
+    DatePickerDialog(
+        context,
+        { _, year, month, day ->
+            val selected = Calendar.getInstance().apply {
+                timeInMillis = current
+                set(Calendar.YEAR, year)
+                set(Calendar.MONTH, month)
+                set(Calendar.DAY_OF_MONTH, day)
+                set(Calendar.HOUR_OF_DAY, 12)
+                set(Calendar.MINUTE, 0)
+                set(Calendar.SECOND, 0)
+                set(Calendar.MILLISECOND, 0)
+            }.timeInMillis
+
+            onSelected(selected)
+        },
+        cal.get(Calendar.YEAR),
+        cal.get(Calendar.MONTH),
+        cal.get(Calendar.DAY_OF_MONTH)
+    ).show()
+}
+
 private fun todayRange(): Pair<Long, Long> {
     val start = Calendar.getInstance().apply {
         set(Calendar.HOUR_OF_DAY, 0)
