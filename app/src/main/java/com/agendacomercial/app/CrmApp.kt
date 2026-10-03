@@ -57,7 +57,7 @@ private sealed class Screen {
 fun CrmApp(vm: AppViewModel) {
     var screen by remember { mutableStateOf<Screen>(Screen.Agenda) }
 
-    MaterialTheme {
+    MaterialTheme(colorScheme = CorporateDarkColors) {
         val root =
             screen is Screen.Agenda ||
             screen is Screen.Clients ||
@@ -65,9 +65,10 @@ fun CrmApp(vm: AppViewModel) {
             screen is Screen.Summary
 
         Scaffold(
+            containerColor = Color.Black,
             bottomBar = {
                 if (root) {
-                    NavigationBar {
+                    NavigationBar(containerColor = Color.Black) {
                         NavigationBarItem(
                             selected = screen is Screen.Agenda,
                             onClick = {
@@ -2071,9 +2072,29 @@ private fun date(value: Long) =
     ).format(Date(value))
 
 private val ProspectBlue = Color(0xFF1565C0)
-private val ProspectBlueSoft = Color(0xFFE3F2FD)
+private val ProspectBlueSoft = Color(0xFF0B2239)
 private val ClientGreen = Color(0xFF2E7D32)
-private val ClientGreenSoft = Color(0xFFE8F5E9)
+private val ClientGreenSoft = Color(0xFF0B2814)
+
+private val CorporateDarkColors = darkColorScheme(
+    primary = Color.White,
+    onPrimary = Color.Black,
+    primaryContainer = Color(0xFF202020),
+    onPrimaryContainer = Color.White,
+    secondary = Color.White,
+    onSecondary = Color.Black,
+    secondaryContainer = Color(0xFF242424),
+    onSecondaryContainer = Color.White,
+    tertiary = Color.White,
+    onTertiary = Color.Black,
+    background = Color.Black,
+    onBackground = Color.White,
+    surface = Color(0xFF090909),
+    onSurface = Color.White,
+    surfaceVariant = Color(0xFF171717),
+    onSurfaceVariant = Color.White,
+    outline = Color(0xFFBDBDBD)
+)
 
 private fun partyAccentColor(isProspect: Boolean) =
     if (isProspect) ProspectBlue else ClientGreen
