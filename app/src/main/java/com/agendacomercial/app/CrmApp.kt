@@ -699,12 +699,34 @@ private fun PartyDetailScreen(
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
 private fun DailySummaryScreen(vm: AppViewModel) {
+    val context = LocalContext.current
     val range = remember { todayRange() }
     val visits = remember(vm.clients, vm.prospects, vm.agenda) {
         vm.dailyVisits(range.first, range.second)
     }
     val orders = remember(vm.clients, vm.prospects, vm.agenda) {
         vm.dailyOrders(range.first, range.second)
+    }
+
+    val excelLauncher = rememberLauncherForActivityResult(
+        contract = ActivityResultContracts.CreateDocument(
+            "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
+        )
+    ) { uri ->
+        if (uri != null) {
+            val ok = DailyVisitsXlsxExporter.write(
+                context = context,
+                uri = uri,
+                visits = visits,
+                dayStart = range.first
+            )
+
+            Toast.makeText(
+                context,
+                if (ok) "Excel guardado correctamente" else "No se ha podido crear el Excel",
+                Toast.LENGTH_LONG
+            ).show()
+        }
     }
 
     val prospections = visits.filter { it.isProspection }
@@ -766,6 +788,22 @@ private fun DailySummaryScreen(vm: AppViewModel) {
                             color = ClientGreen
                         )
                     }
+                }
+            }
+
+            item {
+                Button(
+                    onClick = {
+                        val fileDate = SimpleDateFormat(
+                            "yyyy-MM-dd",
+                            Locale("es", "ES")
+                        ).format(Date(range.first))
+
+                        excelLauncher.launch("Visitas_$fileDate.xlsx")
+                    },
+                    modifier = Modifier.fillMaxWidth()
+                ) {
+                    Text("Exportar Excel de visitas")
                 }
             }
 
