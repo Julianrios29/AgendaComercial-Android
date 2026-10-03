@@ -257,18 +257,27 @@ private fun WeeklyAgendaScreen(vm: AppViewModel, open: (Long, Long) -> Unit) {
             horizontalArrangement = Arrangement.SpaceBetween
         ) {
             IconButton(onClick = { weekOffset-- }) {
-                Text("‹", style = MaterialTheme.typography.headlineMedium)
+                Text(
+                    "‹",
+                    style = MaterialTheme.typography.headlineMedium,
+                    color = CorporateGold
+                )
             }
 
             Text(
                 weekRangeLabel(start),
                 style = MaterialTheme.typography.titleMedium,
                 fontWeight = FontWeight.Bold,
+                color = CorporateGold,
                 modifier = Modifier.padding(top = 12.dp)
             )
 
             IconButton(onClick = { weekOffset++ }) {
-                Text("›", style = MaterialTheme.typography.headlineMedium)
+                Text(
+                    "›",
+                    style = MaterialTheme.typography.headlineMedium,
+                    color = CorporateGold
+                )
             }
         }
 
