@@ -27,6 +27,7 @@ import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.asImageBitmap
 import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.res.painterResource
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.input.KeyboardType
 import androidx.compose.ui.unit.dp
@@ -213,10 +214,21 @@ private fun WeeklyAgendaScreen(vm: AppViewModel, open: (Long, Long) -> Unit) {
     Column(Modifier.fillMaxSize()) {
         TopAppBar(
             title = {
-                Column {
-                    Text("PA SOLÀ", color = CorporateGold, fontWeight = FontWeight.Bold)
-                    Text("Agenda semanal", style = MaterialTheme.typography.labelLarge)
-                }
+                Text(
+                    "Agenda semanal",
+                    color = CorporateGold,
+                    fontWeight = FontWeight.Bold
+                )
+            },
+            actions = {
+                Image(
+                    painter = painterResource(id = R.drawable.app_logo),
+                    contentDescription = "Logo Pà Solà",
+                    modifier = Modifier
+                        .padding(end = 10.dp)
+                        .size(46.dp),
+                    contentScale = ContentScale.Fit
+                )
             }
         )
 
@@ -273,6 +285,7 @@ private fun WeeklyAgendaScreen(vm: AppViewModel, open: (Long, Long) -> Unit) {
                                 tonalElevation = 2.dp,
                                 shape = MaterialTheme.shapes.small,
                                 color = partyContainerColor(visit.isProspect),
+                                contentColor = Color.White,
                                 modifier = Modifier
                                     .fillMaxWidth()
                                     .clickable { open(visit.clientId, visit.id) }
@@ -281,12 +294,12 @@ private fun WeeklyAgendaScreen(vm: AppViewModel, open: (Long, Long) -> Unit) {
                                     Text(
                                         timeOnly(visit.scheduledAt),
                                         fontWeight = FontWeight.Bold,
-                                        color = partyAccentColor(visit.isProspect)
+                                        color = Color.White
                                     )
                                     Text(visit.clientName, fontWeight = FontWeight.SemiBold)
                                     Text(
                                         if (visit.isProspect) "Prospección" else "Cliente",
-                                        color = partyAccentColor(visit.isProspect),
+                                        color = Color.White,
                                         style = MaterialTheme.typography.labelSmall
                                     )
                                     Text(visit.purpose, style = MaterialTheme.typography.bodySmall)
@@ -360,14 +373,15 @@ private fun PartyListScreen(
                 Card(
                     modifier = Modifier.fillMaxWidth().clickable { onOpen(party.id) },
                     colors = CardDefaults.cardColors(
-                        containerColor = partyContainerColor(party.isProspect)
+                        containerColor = partyContainerColor(party.isProspect),
+                        contentColor = Color.White
                     )
                 ) {
                     Column(Modifier.padding(16.dp)) {
                         Text(
                             party.name,
                             fontWeight = FontWeight.Bold,
-                            color = partyAccentColor(party.isProspect),
+                            color = Color.White,
                             style = MaterialTheme.typography.titleMedium
                         )
                         Text(
@@ -472,7 +486,7 @@ private fun PartyDetailScreen(
                         party.name,
                         style = MaterialTheme.typography.titleLarge,
                         fontWeight = FontWeight.Bold,
-                        color = partyAccentColor(party.isProspect)
+                        color = Color.White
                     )
 
                     if (party.businessName.isNotBlank()) {
@@ -763,7 +777,8 @@ private fun DailySummaryScreen(vm: AppViewModel) {
             items(orders, key = { "o" + it.id }) { order ->
                 Card(
                     colors = CardDefaults.cardColors(
-                        containerColor = ClientGreenSoft
+                        containerColor = ClientGreenSoft,
+                        contentColor = Color.White
                     )
                 ) {
                     Column(
@@ -773,7 +788,7 @@ private fun DailySummaryScreen(vm: AppViewModel) {
                         Text(
                             timeOnly(order.createdAt) + " · " + order.localName,
                             fontWeight = FontWeight.Bold,
-                            color = ClientGreen
+                            color = Color.White
                         )
                         if (order.contactPerson.isNotBlank()) {
                             Text("Contacto: " + order.contactPerson)
@@ -804,7 +819,10 @@ private fun SummaryMetric(
 ) {
     Card(
         modifier = modifier,
-        colors = CardDefaults.cardColors(containerColor = color)
+        colors = CardDefaults.cardColors(
+            containerColor = color,
+            contentColor = Color.White
+        )
     ) {
         Column(
             Modifier.padding(10.dp),
@@ -823,7 +841,8 @@ private fun ActivityCard(
 ) {
     Card(
         colors = CardDefaults.cardColors(
-            containerColor = partyContainerColor(isProspection)
+            containerColor = partyContainerColor(isProspection),
+            contentColor = Color.White
         )
     ) {
         Column(
@@ -833,7 +852,7 @@ private fun ActivityCard(
             Text(
                 timeOnly(activity.completedAt) + " · " + activity.localName,
                 fontWeight = FontWeight.Bold,
-                color = partyAccentColor(isProspection)
+                color = Color.White
             )
             if (activity.contactPerson.isNotBlank()) {
                 Text("Contacto: " + activity.contactPerson)
@@ -900,7 +919,8 @@ private fun BeforeVisitScreen(
             Card(
                 Modifier.padding(horizontal = 16.dp).fillMaxWidth(),
                 colors = CardDefaults.cardColors(
-                    containerColor = partyContainerColor(party.isProspect)
+                    containerColor = partyContainerColor(party.isProspect),
+                    contentColor = Color.White
                 )
             ) {
                 Column(Modifier.padding(14.dp)) {
@@ -908,7 +928,7 @@ private fun BeforeVisitScreen(
                         party.name,
                         style = MaterialTheme.typography.titleLarge,
                         fontWeight = FontWeight.Bold,
-                        color = partyAccentColor(party.isProspect)
+                        color = Color.White
                     )
                     if (party.businessName.isNotBlank()) {
                         Text("Empresa: " + party.businessName)
@@ -1925,7 +1945,8 @@ private fun LocalPhotoBox(
             .height(150.dp)
             .clickable(onClick = onClick),
         colors = CardDefaults.cardColors(
-            containerColor = partyContainerColor(isProspect)
+            containerColor = partyContainerColor(isProspect),
+            contentColor = Color.White
         )
     ) {
         Box(
