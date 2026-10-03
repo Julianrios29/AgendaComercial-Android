@@ -57,6 +57,7 @@ private sealed class Screen {
     data class InVisit(val clientId: Long, val visitId: Long?) : Screen()
     data class AfterVisit(val clientId: Long) : Screen()
     data class Suggestions(val clientId: Long) : Screen()
+    data class Budget(val clientId: Long) : Screen()
 }
 
 @Composable
@@ -174,6 +175,7 @@ fun CrmApp(vm: AppViewModel) {
                         inVisit = { screen = Screen.InVisit(s.id, null) },
                         visit = { screen = Screen.NewVisit(s.id) },
                         order = { screen = Screen.NewOrder(s.id) },
+                        budget = { screen = Screen.Budget(s.id) },
                         convert = {
                             vm.convertProspectToClient(s.id)
                             screen = Screen.Detail(s.id)
@@ -227,6 +229,12 @@ fun CrmApp(vm: AppViewModel) {
                         back = { screen = Screen.AfterVisit(s.clientId) },
                         openClient = { screen = Screen.Detail(it) },
                         agenda = { screen = Screen.Agenda }
+                    )
+
+                    is Screen.Budget -> BudgetScreen(
+                        vm = vm,
+                        clientId = s.clientId,
+                        back = { screen = Screen.Detail(s.clientId) }
                     )
                 }
             }
@@ -467,6 +475,7 @@ private fun PartyDetailScreen(
     inVisit: () -> Unit,
     visit: () -> Unit,
     order: () -> Unit,
+    budget: () -> Unit,
     convert: () -> Unit
 ) {
     var reload by remember { mutableIntStateOf(0) }
@@ -558,6 +567,17 @@ private fun PartyDetailScreen(
                         Text("Cuenta: " + party.bankAccount)
                     }
                 }
+            }
+        }
+
+        item {
+            Button(
+                onClick = budget,
+                modifier = Modifier
+                    .padding(horizontal = 16.dp)
+                    .fillMaxWidth()
+            ) {
+                Text("Presupuesto")
             }
         }
 
@@ -2185,6 +2205,343 @@ private fun NewProspectScreen(
             }
 
             item { Spacer(Modifier.height(24.dp)) }
+        }
+    }
+}
+
+private data class BudgetDraftLine(
+    val code: String,
+    val priceText: String,
+    val boxesText: String
+)
+
+@OptIn(ExperimentalMaterial3Api::class)
+@Composable
+private fun BudgetScreen(
+    vm: AppViewModel,
+    clientId: Long,
+    back: () -> Unit
+) {
+    val context = LocalContext.current
+    val client = remember(clientId, vm.clients, vm.prospects) {
+        vm.client(clientId)
+    } ?: return
+
+    val prefs = remember {
+        context.getSharedPreferences(
+            "budget_products",
+            Context.MODE_PRIVATE
+        )
+    }
+
+    var search by remember { mutableStateOf("") }
+    val selected = remember {
+        mutableStateMapOf<String, BudgetDraftLine>()
+    }
+    var pendingLines by remember {
+        mutableStateOf<List<BudgetLine>>(emptyList())
+    }
+
+    val filteredProducts = remember(search) {
+        if (search.isBlank()) {
+            PaSolaBudgetCatalog
+        } else {
+            PaSolaBudgetCatalog.filter {
+                it.name.contains(search, ignoreCase = true) ||
+                    it.category.contains(search, ignoreCase = true) ||
+                    it.description.contains(search, ignoreCase = true)
+            }
+        }
+    }
+
+    val excelLauncher = rememberLauncherForActivityResult(
+        contract = ActivityResultContracts.CreateDocument(
+            "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
+        )
+    ) { uri ->
+        if (uri != null && pendingLines.isNotEmpty()) {
+            val ok = BudgetXlsxExporter.write(
+                context = context,
+                uri = uri,
+                client = client,
+                lines = pendingLines
+            )
+
+            Toast.makeText(
+                context,
+                if (ok) "Presupuesto Excel guardado"
+                else "No se ha podido crear el presupuesto",
+                Toast.LENGTH_LONG
+            ).show()
+        }
+    }
+
+    fun lineFor(product: BudgetCatalogProduct): BudgetDraftLine {
+        return selected[product.id] ?: BudgetDraftLine(
+            code = prefs.getString("code_" + product.id, "") ?: "",
+            priceText = prefs.getString("price_" + product.id, "") ?: "",
+            boxesText = "1"
+        )
+    }
+
+    fun updateLine(
+        product: BudgetCatalogProduct,
+        transform: (BudgetDraftLine) -> BudgetDraftLine
+    ) {
+        selected[product.id] = transform(lineFor(product))
+    }
+
+    val canGenerate = selected.isNotEmpty() &&
+        selected.all { (id, draft) ->
+            draft.code.isNotBlank() &&
+                (draft.priceText.replace(",", ".").toDoubleOrNull() ?: 0.0) > 0.0 &&
+                (draft.boxesText.toIntOrNull() ?: 0) > 0 &&
+                PaSolaBudgetCatalog.any { it.id == id }
+        }
+
+    Column(Modifier.fillMaxSize()) {
+        TopAppBar(
+            title = {
+                Column {
+                    Text(
+                        "Presupuesto",
+                        color = CorporateGold,
+                        fontWeight = FontWeight.Bold
+                    )
+                    Text(
+                        client.name,
+                        style = MaterialTheme.typography.labelLarge
+                    )
+                }
+            },
+            navigationIcon = {
+                TextButton(onClick = back) { Text("<") }
+            }
+        )
+
+        LazyColumn(
+            contentPadding = PaddingValues(16.dp),
+            verticalArrangement = Arrangement.spacedBy(10.dp)
+        ) {
+            item {
+                Card(
+                    colors = CardDefaults.cardColors(
+                        containerColor = CorporateSurfaceAlt
+                    )
+                ) {
+                    Column(
+                        Modifier.padding(14.dp),
+                        verticalArrangement = Arrangement.spacedBy(4.dp)
+                    ) {
+                        Text(
+                            "Catálogo Pà Solà",
+                            color = CorporateGold,
+                            fontWeight = FontWeight.Bold
+                        )
+                        Text(
+                            "Las unidades por caja y descripciones vienen del catálogo web oficial."
+                        )
+                        Text(
+                            "La web no publica precios ni códigos comerciales: introdúcelos una vez y la app los recordará.",
+                            style = MaterialTheme.typography.bodySmall
+                        )
+                    }
+                }
+            }
+
+            item {
+                OutlinedTextField(
+                    value = search,
+                    onValueChange = { search = it },
+                    label = { Text("Buscar producto") },
+                    singleLine = true,
+                    modifier = Modifier.fillMaxWidth()
+                )
+            }
+
+            items(
+                filteredProducts,
+                key = { it.id }
+            ) { product ->
+                val draft = lineFor(product)
+                val isSelected = selected.containsKey(product.id)
+
+                Card(
+                    colors = CardDefaults.cardColors(
+                        containerColor =
+                            if (isSelected) Color(0xFF2A2410)
+                            else CorporateSurfaceAlt
+                    )
+                ) {
+                    Column(
+                        Modifier.padding(12.dp),
+                        verticalArrangement = Arrangement.spacedBy(7.dp)
+                    ) {
+                        Row(
+                            verticalAlignment = Alignment.CenterVertically
+                        ) {
+                            Checkbox(
+                                checked = isSelected,
+                                onCheckedChange = { checked ->
+                                    if (checked) {
+                                        selected[product.id] = draft
+                                    } else {
+                                        selected.remove(product.id)
+                                    }
+                                }
+                            )
+
+                            Column(Modifier.weight(1f)) {
+                                Text(
+                                    product.name,
+                                    fontWeight = FontWeight.Bold
+                                )
+                                Text(
+                                    product.category,
+                                    color = CorporateGold,
+                                    style = MaterialTheme.typography.labelSmall
+                                )
+                                Text(
+                                    product.unitsPerBox.toString() + " u. por caja · " +
+                                        product.description,
+                                    style = MaterialTheme.typography.bodySmall
+                                )
+                            }
+                        }
+
+                        if (isSelected) {
+                            OutlinedTextField(
+                                value = draft.code,
+                                onValueChange = { value ->
+                                    updateLine(product) {
+                                        it.copy(code = value)
+                                    }
+                                },
+                                label = { Text("Código de producto") },
+                                singleLine = true,
+                                modifier = Modifier.fillMaxWidth()
+                            )
+
+                            Row(
+                                horizontalArrangement = Arrangement.spacedBy(8.dp)
+                            ) {
+                                OutlinedTextField(
+                                    value = draft.boxesText,
+                                    onValueChange = { value ->
+                                        updateLine(product) {
+                                            it.copy(
+                                                boxesText = value.filter(Char::isDigit)
+                                            )
+                                        }
+                                    },
+                                    label = { Text("Cajas") },
+                                    keyboardOptions = KeyboardOptions(
+                                        keyboardType = KeyboardType.Number
+                                    ),
+                                    singleLine = true,
+                                    modifier = Modifier.weight(1f)
+                                )
+
+                                OutlinedTextField(
+                                    value = draft.priceText,
+                                    onValueChange = { value ->
+                                        updateLine(product) {
+                                            it.copy(priceText = value)
+                                        }
+                                    },
+                                    label = { Text("Precio/caja €") },
+                                    keyboardOptions = KeyboardOptions(
+                                        keyboardType = KeyboardType.Decimal
+                                    ),
+                                    singleLine = true,
+                                    modifier = Modifier.weight(1f)
+                                )
+                            }
+
+                            TextButton(
+                                onClick = {
+                                    val intent = Intent(
+                                        Intent.ACTION_VIEW,
+                                        Uri.parse(product.webUrl)
+                                    )
+                                    context.startActivity(intent)
+                                }
+                            ) {
+                                Text("Ver ficha web / foto")
+                            }
+                        }
+                    }
+                }
+            }
+
+            item {
+                Button(
+                    enabled = canGenerate,
+                    onClick = {
+                        val lines = selected.mapNotNull { (id, draft) ->
+                            val product = PaSolaBudgetCatalog
+                                .firstOrNull { it.id == id }
+                                ?: return@mapNotNull null
+
+                            val price = draft.priceText
+                                .replace(",", ".")
+                                .toDoubleOrNull()
+                                ?: return@mapNotNull null
+
+                            val boxes = draft.boxesText
+                                .toIntOrNull()
+                                ?: return@mapNotNull null
+
+                            prefs.edit()
+                                .putString("code_" + id, draft.code.trim())
+                                .putString("price_" + id, draft.priceText.trim())
+                                .apply()
+
+                            BudgetLine(
+                                product = product,
+                                code = draft.code.trim(),
+                                boxes = boxes,
+                                pricePerBox = price
+                            )
+                        }.sortedBy { it.product.name }
+
+                        pendingLines = lines
+
+                        val safeClient = client.name
+                            .replace(Regex("[^A-Za-z0-9À-ÿ_-]+"), "_")
+                            .take(35)
+
+                        val date = SimpleDateFormat(
+                            "yyyy-MM-dd",
+                            Locale("es", "ES")
+                        ).format(Date())
+
+                        excelLauncher.launch(
+                            "Presupuesto_$safeClient_$date.xlsx"
+                        )
+                    },
+                    modifier = Modifier.fillMaxWidth()
+                ) {
+                    Text(
+                        "Crear Excel de presupuesto (" +
+                            selected.size +
+                            " productos)"
+                    )
+                }
+            }
+
+            if (selected.isNotEmpty() && !canGenerate) {
+                item {
+                    Text(
+                        "Para generar el presupuesto, completa código, precio y número de cajas de todos los productos seleccionados.",
+                        style = MaterialTheme.typography.bodySmall
+                    )
+                }
+            }
+
+            item {
+                Spacer(Modifier.height(24.dp))
+            }
         }
     }
 }
