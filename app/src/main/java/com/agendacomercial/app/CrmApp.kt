@@ -148,7 +148,11 @@ fun CrmApp(vm: AppViewModel) {
                         back = {
                             screen = if (s.prospect) Screen.Prospects else Screen.Clients
                         },
-                        saved = { screen = Screen.Detail(it) }
+                        saved = { id ->
+                            screen =
+                                if (s.prospect) Screen.AfterVisit(id)
+                                else Screen.Detail(id)
+                        }
                     )
 
                     is Screen.Detail -> PartyDetailScreen(

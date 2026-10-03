@@ -79,6 +79,18 @@ class AppViewModel(app: Application) : AndroidViewModel(app) {
             notes,
             isProspect
         )
+
+        if (isProspect) {
+            db.saveVisitReport(
+                visitId = null,
+                clientId = id,
+                conversationSummary = "Prospección nueva registrada",
+                needs = "",
+                commitments = "",
+                notes = notes
+            )
+        }
+
         refresh()
         return id
     }
