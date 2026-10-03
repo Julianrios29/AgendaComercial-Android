@@ -15,11 +15,12 @@ object DailyVisitsXlsxExporter {
         context: Context,
         uri: Uri,
         visits: List<DailyVisitActivity>,
-        dayStart: Long
+        rangeStart: Long,
+        rangeEnd: Long
     ): Boolean {
         return runCatching {
             context.contentResolver.openOutputStream(uri)?.use { output ->
-                writeWorkbook(output, visits, dayStart)
+                writeWorkbook(output, visits, rangeStart, rangeEnd)
             } ?: error("No se pudo abrir el archivo de destino")
             true
         }.getOrDefault(false)
@@ -28,7 +29,8 @@ object DailyVisitsXlsxExporter {
     private fun writeWorkbook(
         output: OutputStream,
         visits: List<DailyVisitActivity>,
-        dayStart: Long
+        rangeStart: Long,
+        rangeEnd: Long
     ) {
         ZipOutputStream(output).use { zip ->
             put(zip, "[Content_Types].xml", contentTypes())
@@ -36,7 +38,11 @@ object DailyVisitsXlsxExporter {
             put(zip, "xl/workbook.xml", workbook())
             put(zip, "xl/_rels/workbook.xml.rels", workbookRels())
             put(zip, "xl/styles.xml", styles())
-            put(zip, "xl/worksheets/sheet1.xml", sheet(visits, dayStart))
+            put(
+                zip,
+                "xl/worksheets/sheet1.xml",
+                sheet(visits, rangeStart, rangeEnd)
+            )
         }
     }
 
@@ -105,7 +111,9 @@ object DailyVisitsXlsxExporter {
       <diagonal/>
     </border>
   </borders>
-  <cellStyleXfs count="1"><xf numFmtId="0" fontId="0" fillId="0" borderId="0"/></cellStyleXfs>
+  <cellStyleXfs count="1">
+    <xf numFmtId="0" fontId="0" fillId="0" borderId="0"/>
+  </cellStyleXfs>
   <cellXfs count="5">
     <xf numFmtId="0" fontId="0" fillId="0" borderId="0" xfId="0">
       <alignment vertical="top" wrapText="1"/>
@@ -123,19 +131,28 @@ object DailyVisitsXlsxExporter {
       <alignment horizontal="center" vertical="center"/>
     </xf>
   </cellXfs>
-  <cellStyles count="1"><cellStyle name="Normal" xfId="0" builtinId="0"/></cellStyles>
+  <cellStyles count="1">
+    <cellStyle name="Normal" xfId="0" builtinId="0"/>
+  </cellStyles>
 </styleSheet>"""
 
     private fun sheet(
         visits: List<DailyVisitActivity>,
-        dayStart: Long
+        rangeStart: Long,
+        rangeEnd: Long
     ): String {
         val date = SimpleDateFormat("dd/MM/yyyy", Locale("es", "ES"))
-            .format(Date(dayStart))
         val time = SimpleDateFormat("HH:mm", Locale("es", "ES"))
+
+        val startLabel = date.format(Date(rangeStart))
+        val endLabel = date.format(Date(rangeEnd))
+        val periodLabel =
+            if (startLabel == endLabel) startLabel
+            else "$startLabel - $endLabel"
 
         val headers = listOf(
             "Tipo",
+            "Fecha",
             "Hora",
             "Local",
             "Persona de contacto",
@@ -158,21 +175,30 @@ object DailyVisitsXlsxExporter {
 </sheetViews>
 <cols>
   <col min="1" max="1" width="14" customWidth="1"/>
-  <col min="2" max="2" width="10" customWidth="1"/>
-  <col min="3" max="3" width="28" customWidth="1"/>
-  <col min="4" max="4" width="24" customWidth="1"/>
-  <col min="5" max="5" width="16" customWidth="1"/>
-  <col min="6" max="6" width="28" customWidth="1"/>
-  <col min="7" max="10" width="34" customWidth="1"/>
+  <col min="2" max="2" width="13" customWidth="1"/>
+  <col min="3" max="3" width="10" customWidth="1"/>
+  <col min="4" max="4" width="28" customWidth="1"/>
+  <col min="5" max="5" width="24" customWidth="1"/>
+  <col min="6" max="6" width="16" customWidth="1"/>
+  <col min="7" max="7" width="28" customWidth="1"/>
+  <col min="8" max="11" width="34" customWidth="1"/>
 </cols>
 <sheetData>
 """.trimIndent())
 
         sb.append("<row r=\"1\" ht=\"26\" customHeight=\"1\">")
-        sb.append(cell("A1", "Pà Solà Comercial · Visitas del $date", 4))
+        sb.append(
+            cell(
+                "A1",
+                "Pà Solà Comercial · Visitas $periodLabel",
+                4
+            )
+        )
         sb.append("</row>")
 
-        sb.append("<row r=\"2\"><c r=\"A2\" t=\"inlineStr\"><is><t></t></is></c></row>")
+        sb.append(
+            "<row r=\"2\"><c r=\"A2\" t=\"inlineStr\"><is><t></t></is></c></row>"
+        )
 
         sb.append("<row r=\"3\" ht=\"28\" customHeight=\"1\">")
         headers.forEachIndexed { index, value ->
@@ -185,6 +211,7 @@ object DailyVisitsXlsxExporter {
             val style = if (visit.isProspection) 2 else 3
             val values = listOf(
                 if (visit.isProspection) "Prospección" else "Cliente",
+                date.format(Date(visit.completedAt)),
                 time.format(Date(visit.completedAt)),
                 visit.localName,
                 visit.contactPerson,
@@ -198,7 +225,13 @@ object DailyVisitsXlsxExporter {
 
             sb.append("<row r=\"$row\">")
             values.forEachIndexed { column, value ->
-                sb.append(cell(columnName(column + 1) + row, value, style))
+                sb.append(
+                    cell(
+                        columnName(column + 1) + row,
+                        value,
+                        style
+                    )
+                )
             }
             sb.append("</row>")
         }
@@ -206,10 +239,14 @@ object DailyVisitsXlsxExporter {
         sb.append("</sheetData>")
 
         if (visits.isNotEmpty()) {
-            sb.append("""<autoFilter ref="A3:J${visits.size + 3}"/>""")
+            sb.append(
+                """<autoFilter ref="A3:K${visits.size + 3}"/>"""
+            )
         }
 
-        sb.append("""<mergeCells count="1"><mergeCell ref="A1:J1"/></mergeCells>""")
+        sb.append(
+            """<mergeCells count="1"><mergeCell ref="A1:K1"/></mergeCells>"""
+        )
         sb.append("</worksheet>")
         return sb.toString()
     }
