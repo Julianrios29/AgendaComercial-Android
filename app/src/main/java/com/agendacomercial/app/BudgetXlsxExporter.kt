@@ -25,7 +25,8 @@ import kotlinx.coroutines.withContext
 data class BudgetExportResult(
     val success: Boolean,
     val imagesIncluded: Int,
-    val productCount: Int
+    val productCount: Int,
+    val errorMessage: String? = null
 )
 
 object BudgetXlsxExporter {
@@ -65,11 +66,12 @@ object BudgetXlsxExporter {
                 imagesIncluded = productImages.count { it != null },
                 productCount = lines.size
             )
-        }.getOrElse {
+        }.getOrElse { error ->
             BudgetExportResult(
                 success = false,
                 imagesIncluded = 0,
-                productCount = lines.size
+                productCount = lines.size,
+                errorMessage = error.message ?: error.javaClass.simpleName
             )
         }
     }
@@ -669,58 +671,79 @@ object BudgetXlsxExporter {
     }
 
     private fun createPaddedLogo(context: Context): ByteArray {
-        val source = BitmapFactory.decodeResource(
-            context.resources,
-            R.drawable.app_logo
-        ) ?: error("No se pudo cargar el logo")
+        val originalBytes = context.resources
+            .openRawResource(R.drawable.app_logo)
+            .use { it.readBytes() }
 
-        val canvasWidth = 420
-        val canvasHeight = 260
-        val padding = 28f
+        return runCatching {
+            val options = BitmapFactory.Options().apply {
+                inPreferredConfig = Bitmap.Config.ARGB_8888
+                inMutable = true
+            }
 
-        val output = Bitmap.createBitmap(
-            canvasWidth,
-            canvasHeight,
-            Bitmap.Config.ARGB_8888
-        )
+            val source = BitmapFactory.decodeByteArray(
+                originalBytes,
+                0,
+                originalBytes.size,
+                options
+            ) ?: return@runCatching originalBytes
 
-        val canvas = Canvas(output)
-        canvas.drawARGB(0, 0, 0, 0)
+            val canvasWidth = 420
+            val canvasHeight = 260
+            val padding = 30f
 
-        val availableWidth = canvasWidth - (padding * 2f)
-        val availableHeight = canvasHeight - (padding * 2f)
-
-        val scale = minOf(
-            availableWidth / source.width.toFloat(),
-            availableHeight / source.height.toFloat()
-        )
-
-        val drawWidth = source.width * scale
-        val drawHeight = source.height * scale
-        val left = (canvasWidth - drawWidth) / 2f
-        val top = (canvasHeight - drawHeight) / 2f
-
-        canvas.drawBitmap(
-            source,
-            null,
-            RectF(
-                left,
-                top,
-                left + drawWidth,
-                top + drawHeight
-            ),
-            null
-        )
-
-        return ByteArrayOutputStream().use { out ->
-            output.compress(
-                Bitmap.CompressFormat.PNG,
-                100,
-                out
+            val output = Bitmap.createBitmap(
+                canvasWidth,
+                canvasHeight,
+                Bitmap.Config.ARGB_8888
             )
-            source.recycle()
-            output.recycle()
-            out.toByteArray()
+
+            val canvas = Canvas(output)
+            canvas.drawARGB(0, 0, 0, 0)
+
+            val availableWidth = canvasWidth - (padding * 2f)
+            val availableHeight = canvasHeight - (padding * 2f)
+
+            val scale = minOf(
+                availableWidth / source.width.toFloat(),
+                availableHeight / source.height.toFloat()
+            )
+
+            val drawWidth = source.width * scale
+            val drawHeight = source.height * scale
+            val left = (canvasWidth - drawWidth) / 2f
+            val top = (canvasHeight - drawHeight) / 2f
+
+            canvas.drawBitmap(
+                source,
+                null,
+                RectF(
+                    left,
+                    top,
+                    left + drawWidth,
+                    top + drawHeight
+                ),
+                null
+            )
+
+            ByteArrayOutputStream().use { out ->
+                val compressed = output.compress(
+                    Bitmap.CompressFormat.PNG,
+                    100,
+                    out
+                )
+
+                source.recycle()
+                output.recycle()
+
+                if (!compressed) {
+                    originalBytes
+                } else {
+                    out.toByteArray()
+                }
+            }
+        }.getOrElse {
+            originalBytes
         }
     }
 
