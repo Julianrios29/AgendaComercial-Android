@@ -216,5 +216,5 @@ data class BudgetLine(
     val product: BudgetCatalogProduct,
     val code: String,
     val boxes: Int,
-    val pricePerBox: Double
+    val pricePerUnit: Double
 )
