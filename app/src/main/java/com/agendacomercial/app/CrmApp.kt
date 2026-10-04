@@ -2302,7 +2302,10 @@ private fun BudgetScreen(
     fun lineFor(product: BudgetCatalogProduct): BudgetDraftLine {
         return selected[product.id] ?: BudgetDraftLine(
             code = prefs.getString("code_" + product.id, "") ?: "",
-            priceText = prefs.getString("price_" + product.id, "") ?: "",
+            priceText =
+                prefs.getString("unit_price_" + product.id, null)
+                    ?: prefs.getString("price_" + product.id, "")
+                    ?: "",
             boxesText = "1"
         )
     }
@@ -2365,7 +2368,7 @@ private fun BudgetScreen(
                             "Las unidades por caja y descripciones vienen del catálogo web oficial."
                         )
                         Text(
-                            "La web no publica precios ni códigos comerciales: introdúcelos una vez y la app los recordará.",
+                            "La web no publica precios ni códigos comerciales: introduce el precio por unidad y el código una vez y la app los recordará.",
                             style = MaterialTheme.typography.bodySmall
                         )
                     }
@@ -2472,7 +2475,7 @@ private fun BudgetScreen(
                                             it.copy(priceText = value)
                                         }
                                     },
-                                    label = { Text("Precio/caja €") },
+                                    label = { Text("Precio/unidad €") },
                                     keyboardOptions = KeyboardOptions(
                                         keyboardType = KeyboardType.Decimal
                                     ),
@@ -2517,6 +2520,7 @@ private fun BudgetScreen(
 
                             prefs.edit()
                                 .putString("code_" + id, draft.code.trim())
+                                .putString("unit_price_" + id, draft.priceText.trim())
                                 .putString("price_" + id, draft.priceText.trim())
                                 .apply()
 
@@ -2524,7 +2528,7 @@ private fun BudgetScreen(
                                 product = product,
                                 code = draft.code.trim(),
                                 boxes = boxes,
-                                pricePerBox = price
+                                pricePerUnit = price
                             )
                         }.sortedBy { it.product.name }
 

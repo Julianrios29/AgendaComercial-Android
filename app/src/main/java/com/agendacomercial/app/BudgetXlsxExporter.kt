@@ -3,6 +3,8 @@ package com.agendacomercial.app
 import android.content.Context
 import android.graphics.Bitmap
 import android.graphics.BitmapFactory
+import android.graphics.Canvas
+import android.graphics.RectF
 import android.net.Uri
 import java.io.ByteArrayOutputStream
 import java.io.OutputStream
@@ -35,9 +37,7 @@ object BudgetXlsxExporter {
         lines: List<BudgetLine>
     ): BudgetExportResult = withContext(Dispatchers.IO) {
         runCatching {
-            val logo = context.resources
-                .openRawResource(R.drawable.app_logo)
-                .use { it.readBytes() }
+            val logo = createPaddedLogo(context)
 
             val productImages = coroutineScope {
                 lines.map { line ->
@@ -244,8 +244,8 @@ object BudgetXlsxExporter {
             oneCellImage(
                 col = 0,
                 row = 0,
-                widthPx = 130,
-                heightPx = 85,
+                widthPx = 150,
+                heightPx = 96,
                 id = 1,
                 name = "Logo Pà Solà",
                 relationId = 1
@@ -469,7 +469,9 @@ object BudgetXlsxExporter {
         val totalRow = startRow + lines.size
         val lastProductRow = (totalRow - 1).coerceAtLeast(10)
         val total = lines.sumOf {
-            it.boxes.toDouble() * it.pricePerBox
+            it.boxes.toDouble() *
+                it.product.unitsPerBox.toDouble() *
+                it.pricePerUnit
         }
 
         val sb = StringBuilder()
@@ -549,7 +551,7 @@ object BudgetXlsxExporter {
             "Producto",
             "U./caja",
             "Cajas",
-            "Precio/caja",
+            "Precio/unidad",
             "Importe",
             "Descripción"
         )
@@ -568,7 +570,10 @@ object BudgetXlsxExporter {
 
         lines.forEachIndexed { index, line ->
             val row = startRow + index
-            val amount = line.boxes.toDouble() * line.pricePerBox
+            val amount =
+                line.boxes.toDouble() *
+                    line.product.unitsPerBox.toDouble() *
+                    line.pricePerUnit
 
             sb.append(
                 "<row r=\"$row\" ht=\"72\" customHeight=\"1\">"
@@ -583,7 +588,7 @@ object BudgetXlsxExporter {
                 )
             )
             sb.append(numberCell("E$row", line.boxes.toDouble(), 4))
-            sb.append(numberCell("F$row", line.pricePerBox, 5))
+            sb.append(numberCell("F$row", line.pricePerUnit, 5))
             sb.append(numberCell("G$row", amount, 5))
             sb.append(cell("H$row", line.product.description, 4))
             sb.append("</row>")
@@ -661,6 +666,62 @@ object BudgetXlsxExporter {
             n = (n - 1) / 26
         }
         return result.reverse().toString()
+    }
+
+    private fun createPaddedLogo(context: Context): ByteArray {
+        val source = BitmapFactory.decodeResource(
+            context.resources,
+            R.drawable.app_logo
+        ) ?: error("No se pudo cargar el logo")
+
+        val canvasWidth = 420
+        val canvasHeight = 260
+        val padding = 28f
+
+        val output = Bitmap.createBitmap(
+            canvasWidth,
+            canvasHeight,
+            Bitmap.Config.ARGB_8888
+        )
+
+        val canvas = Canvas(output)
+        canvas.drawARGB(0, 0, 0, 0)
+
+        val availableWidth = canvasWidth - (padding * 2f)
+        val availableHeight = canvasHeight - (padding * 2f)
+
+        val scale = minOf(
+            availableWidth / source.width.toFloat(),
+            availableHeight / source.height.toFloat()
+        )
+
+        val drawWidth = source.width * scale
+        val drawHeight = source.height * scale
+        val left = (canvasWidth - drawWidth) / 2f
+        val top = (canvasHeight - drawHeight) / 2f
+
+        canvas.drawBitmap(
+            source,
+            null,
+            RectF(
+                left,
+                top,
+                left + drawWidth,
+                top + drawHeight
+            ),
+            null
+        )
+
+        return ByteArrayOutputStream().use { out ->
+            output.compress(
+                Bitmap.CompressFormat.PNG,
+                100,
+                out
+            )
+            source.recycle()
+            output.recycle()
+            out.toByteArray()
+        }
     }
 
     private fun fetchProductImage(
