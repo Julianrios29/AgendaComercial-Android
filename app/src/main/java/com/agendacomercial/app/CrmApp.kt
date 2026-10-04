@@ -2279,7 +2279,8 @@ private fun BudgetScreen(
 
                 val message =
                     if (!result.success) {
-                        "No se ha podido crear el presupuesto"
+                        "No se ha podido crear el presupuesto" +
+                            (result.errorMessage?.let { ": $it" } ?: "")
                     } else if (result.imagesIncluded == result.productCount) {
                         "Presupuesto guardado con fotos"
                     } else {
