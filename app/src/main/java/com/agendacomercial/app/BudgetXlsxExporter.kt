@@ -782,7 +782,23 @@ object BudgetXlsxExporter {
                 out.toByteArray()
             }
         }.getOrElse {
-            originalBytes
+            val fallback = Bitmap.createBitmap(
+                640,
+                360,
+                Bitmap.Config.ARGB_8888
+            )
+
+            Canvas(fallback).drawRGB(255, 255, 255)
+
+            ByteArrayOutputStream().use { out ->
+                fallback.compress(
+                    Bitmap.CompressFormat.JPEG,
+                    95,
+                    out
+                )
+                fallback.recycle()
+                out.toByteArray()
+            }
         }
     }
 
