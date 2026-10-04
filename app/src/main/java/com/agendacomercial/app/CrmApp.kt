@@ -266,7 +266,7 @@ private fun WeeklyAgendaScreen(vm: AppViewModel, open: (Long, Long) -> Unit) {
                     runCatching {
                         BitmapFactory.decodeResource(
                             context.resources,
-                            R.drawable.app_logo
+                            R.mipmap.pa_sola_app
                         )?.asImageBitmap()
                     }.getOrNull()
                 }
