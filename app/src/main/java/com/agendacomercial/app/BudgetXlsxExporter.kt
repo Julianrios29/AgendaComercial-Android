@@ -716,7 +716,7 @@ object BudgetXlsxExporter {
 
     private fun createPaddedLogo(context: Context): ByteArray {
         val originalBytes = context.resources
-            .openRawResource(R.mipmap.pa_sola_app)
+            .openRawResource(R.mipmap.pa_sola_legacy)
             .use { it.readBytes() }
 
         return runCatching {
