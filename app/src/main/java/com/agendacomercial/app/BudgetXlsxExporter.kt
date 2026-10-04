@@ -102,7 +102,7 @@ object BudgetXlsxExporter {
                 "xl/drawings/_rels/drawing1.xml.rels",
                 drawingRels(productImages)
             )
-            putBytes(zip, "xl/media/logo.png", logoBytes)
+            putBytes(zip, "xl/media/logo.jpg", logoBytes)
 
             productImages.forEachIndexed { index, bytes ->
                 if (bytes != null) {
@@ -142,6 +142,7 @@ object BudgetXlsxExporter {
   <Default Extension="rels" ContentType="application/vnd.openxmlformats-package.relationships+xml"/>
   <Default Extension="xml" ContentType="application/xml"/>
   <Default Extension="png" ContentType="image/png"/>
+  <Default Extension="jpg" ContentType="image/jpeg"/>
   <Override PartName="/xl/workbook.xml" ContentType="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet.main+xml"/>
   <Override PartName="/xl/worksheets/sheet1.xml" ContentType="application/vnd.openxmlformats-officedocument.spreadsheetml.worksheet+xml"/>
   <Override PartName="/xl/styles.xml" ContentType="application/vnd.openxmlformats-officedocument.spreadsheetml.styles+xml"/>
@@ -208,7 +209,7 @@ object BudgetXlsxExporter {
         sb.append(
             """<Relationship Id="rId1"
                 Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/image"
-                Target="../media/logo.png"/>"""
+                Target="../media/logo.jpg"/>"""
         )
 
         var relationId = 2
@@ -243,11 +244,11 @@ object BudgetXlsxExporter {
         )
 
         sb.append(
-            oneCellImage(
-                col = 0,
-                row = 0,
-                widthPx = 150,
-                heightPx = 96,
+            twoCellImage(
+                fromCol = 0,
+                fromRow = 0,
+                toCol = 2,
+                toRow = 4,
                 id = 1,
                 name = "Logo Pà Solà",
                 relationId = 1
@@ -276,6 +277,49 @@ object BudgetXlsxExporter {
 
         sb.append("</xdr:wsDr>")
         return sb.toString()
+    }
+
+    private fun twoCellImage(
+        fromCol: Int,
+        fromRow: Int,
+        toCol: Int,
+        toRow: Int,
+        id: Int,
+        name: String,
+        relationId: Int
+    ): String {
+        return """
+<xdr:twoCellAnchor editAs="oneCell">
+  <xdr:from>
+    <xdr:col>$fromCol</xdr:col>
+    <xdr:colOff>0</xdr:colOff>
+    <xdr:row>$fromRow</xdr:row>
+    <xdr:rowOff>0</xdr:rowOff>
+  </xdr:from>
+  <xdr:to>
+    <xdr:col>$toCol</xdr:col>
+    <xdr:colOff>0</xdr:colOff>
+    <xdr:row>$toRow</xdr:row>
+    <xdr:rowOff>0</xdr:rowOff>
+  </xdr:to>
+  <xdr:pic>
+    <xdr:nvPicPr>
+      <xdr:cNvPr id="$id" name="${xml(name)}"/>
+      <xdr:cNvPicPr/>
+    </xdr:nvPicPr>
+    <xdr:blipFill>
+      <a:blip r:embed="rId$relationId"/>
+      <a:srcRect l="0" t="0" r="0" b="0"/>
+      <a:stretch><a:fillRect/></a:stretch>
+    </xdr:blipFill>
+    <xdr:spPr>
+      <a:xfrm/>
+      <a:prstGeom prst="rect"><a:avLst/></a:prstGeom>
+    </xdr:spPr>
+  </xdr:pic>
+  <xdr:clientData/>
+</xdr:twoCellAnchor>
+""".trimIndent()
     }
 
     private fun oneCellImage(
@@ -676,21 +720,16 @@ object BudgetXlsxExporter {
             .use { it.readBytes() }
 
         return runCatching {
-            val options = BitmapFactory.Options().apply {
-                inPreferredConfig = Bitmap.Config.ARGB_8888
-                inMutable = true
-            }
-
             val source = BitmapFactory.decodeByteArray(
                 originalBytes,
                 0,
-                originalBytes.size,
-                options
+                originalBytes.size
             ) ?: return@runCatching originalBytes
 
-            val canvasWidth = 420
-            val canvasHeight = 260
-            val padding = 30f
+            val canvasWidth = 640
+            val canvasHeight = 360
+            val paddingX = 42f
+            val paddingY = 28f
 
             val output = Bitmap.createBitmap(
                 canvasWidth,
@@ -699,10 +738,10 @@ object BudgetXlsxExporter {
             )
 
             val canvas = Canvas(output)
-            canvas.drawARGB(0, 0, 0, 0)
+            canvas.drawRGB(255, 255, 255)
 
-            val availableWidth = canvasWidth - (padding * 2f)
-            val availableHeight = canvasHeight - (padding * 2f)
+            val availableWidth = canvasWidth - (paddingX * 2f)
+            val availableHeight = canvasHeight - (paddingY * 2f)
 
             val scale = minOf(
                 availableWidth / source.width.toFloat(),
@@ -728,8 +767,8 @@ object BudgetXlsxExporter {
 
             ByteArrayOutputStream().use { out ->
                 val compressed = output.compress(
-                    Bitmap.CompressFormat.PNG,
-                    100,
+                    Bitmap.CompressFormat.JPEG,
+                    96,
                     out
                 )
 
@@ -737,10 +776,10 @@ object BudgetXlsxExporter {
                 output.recycle()
 
                 if (!compressed) {
-                    originalBytes
-                } else {
-                    out.toByteArray()
+                    error("No se pudo preparar el logo JPEG")
                 }
+
+                out.toByteArray()
             }
         }.getOrElse {
             originalBytes
