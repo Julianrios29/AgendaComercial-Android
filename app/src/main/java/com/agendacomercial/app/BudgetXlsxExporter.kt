@@ -3,8 +3,6 @@ package com.agendacomercial.app
 import android.content.Context
 import android.graphics.Bitmap
 import android.graphics.BitmapFactory
-import android.graphics.Canvas
-import android.graphics.RectF
 import android.net.Uri
 import java.io.ByteArrayOutputStream
 import java.io.OutputStream
@@ -38,7 +36,9 @@ object BudgetXlsxExporter {
         lines: List<BudgetLine>
     ): BudgetExportResult = withContext(Dispatchers.IO) {
         runCatching {
-            val logo = createPaddedLogo(context)
+            val logo = context.resources
+                .openRawResource(R.mipmap.pa_sola_legacy)
+                .use { it.readBytes() }
 
             val productImages = coroutineScope {
                 lines.map { line ->
@@ -102,7 +102,7 @@ object BudgetXlsxExporter {
                 "xl/drawings/_rels/drawing1.xml.rels",
                 drawingRels(productImages)
             )
-            putBytes(zip, "xl/media/logo.jpg", logoBytes)
+            putBytes(zip, "xl/media/logo.png", logoBytes)
 
             productImages.forEachIndexed { index, bytes ->
                 if (bytes != null) {
@@ -142,7 +142,6 @@ object BudgetXlsxExporter {
   <Default Extension="rels" ContentType="application/vnd.openxmlformats-package.relationships+xml"/>
   <Default Extension="xml" ContentType="application/xml"/>
   <Default Extension="png" ContentType="image/png"/>
-  <Default Extension="jpg" ContentType="image/jpeg"/>
   <Override PartName="/xl/workbook.xml" ContentType="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet.main+xml"/>
   <Override PartName="/xl/worksheets/sheet1.xml" ContentType="application/vnd.openxmlformats-officedocument.spreadsheetml.worksheet+xml"/>
   <Override PartName="/xl/styles.xml" ContentType="application/vnd.openxmlformats-officedocument.spreadsheetml.styles+xml"/>
@@ -209,7 +208,7 @@ object BudgetXlsxExporter {
         sb.append(
             """<Relationship Id="rId1"
                 Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/image"
-                Target="../media/logo.jpg"/>"""
+                Target="../media/logo.png"/>"""
         )
 
         var relationId = 2
@@ -712,94 +711,6 @@ object BudgetXlsxExporter {
             n = (n - 1) / 26
         }
         return result.reverse().toString()
-    }
-
-    private fun createPaddedLogo(context: Context): ByteArray {
-        val originalBytes = context.resources
-            .openRawResource(R.mipmap.pa_sola_legacy)
-            .use { it.readBytes() }
-
-        return runCatching {
-            val source = BitmapFactory.decodeByteArray(
-                originalBytes,
-                0,
-                originalBytes.size
-            ) ?: return@runCatching originalBytes
-
-            val canvasWidth = 640
-            val canvasHeight = 360
-            val paddingX = 42f
-            val paddingY = 28f
-
-            val output = Bitmap.createBitmap(
-                canvasWidth,
-                canvasHeight,
-                Bitmap.Config.ARGB_8888
-            )
-
-            val canvas = Canvas(output)
-            canvas.drawRGB(255, 255, 255)
-
-            val availableWidth = canvasWidth - (paddingX * 2f)
-            val availableHeight = canvasHeight - (paddingY * 2f)
-
-            val scale = minOf(
-                availableWidth / source.width.toFloat(),
-                availableHeight / source.height.toFloat()
-            )
-
-            val drawWidth = source.width * scale
-            val drawHeight = source.height * scale
-            val left = (canvasWidth - drawWidth) / 2f
-            val top = (canvasHeight - drawHeight) / 2f
-
-            canvas.drawBitmap(
-                source,
-                null,
-                RectF(
-                    left,
-                    top,
-                    left + drawWidth,
-                    top + drawHeight
-                ),
-                null
-            )
-
-            ByteArrayOutputStream().use { out ->
-                val compressed = output.compress(
-                    Bitmap.CompressFormat.JPEG,
-                    96,
-                    out
-                )
-
-                source.recycle()
-                output.recycle()
-
-                if (!compressed) {
-                    error("No se pudo preparar el logo JPEG")
-                }
-
-                out.toByteArray()
-            }
-        }.getOrElse {
-            val fallback = Bitmap.createBitmap(
-                640,
-                360,
-                Bitmap.Config.ARGB_8888
-            )
-
-            Canvas(fallback).drawRGB(255, 255, 255)
-
-            ByteArrayOutputStream().use { out ->
-                fallback.compress(
-                    Bitmap.CompressFormat.JPEG,
-                    95,
-                    out
-                )
-                fallback.recycle()
-                out.toByteArray()
-            }
-        }
     }
 
     private fun fetchProductImage(
