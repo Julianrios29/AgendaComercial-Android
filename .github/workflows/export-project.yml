@@ -1,0 +1,50 @@
+name: Export Project Handoff
+
+on:
+  workflow_dispatch:
+  push:
+    branches: [ main ]
+
+jobs:
+  export:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 1
+
+      - name: Create source package
+        run: |
+          mkdir -p handoff/AgendaComercial-Android
+          git archive HEAD | tar -x -C handoff/AgendaComercial-Android
+          cat > handoff/README_CONTINUACION.md <<'EOF'
+          # Pà Solà Comercial — paquete de continuidad
+
+          Este ZIP contiene el proyecto Android completo tal como está en la rama main.
+
+          ## Estado actual
+          - Aplicación Android Kotlin + Jetpack Compose.
+          - applicationId: com.pasola.agendacomercial
+          - Funciones: Agenda, Clientes, Prospecciones, Resumen por fechas, Excel de visitas, Sugerencias y Presupuestos.
+          - Presupuestos: catálogo, códigos/precios persistentes, precio por unidad, unidades por caja, fotos de productos y exportación XLSX.
+
+          ## Incidencia pendiente al cambiar de chat
+          El último problema comunicado es de imágenes/logos:
+          - En el Excel del presupuesto aparece “no se puede mostrar la imagen”.
+          - El logo de la parte superior derecha de la pestaña Agenda tampoco se ve.
+          - Antes de seguir cambiando tamaños, revisar los recursos gráficos y el formato real de los bytes que se insertan en XLSX.
+          - Verificar especialmente BudgetXlsxExporter.kt y los recursos app_logo / pa_sola_app.
+
+          ## Repositorio
+          Julianrios29/AgendaComercial-Android
+          EOF
+          cd handoff
+          zip -r ../AgendaComercial-Proyecto-Continuidad.zip .
+          cd ..
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: AgendaComercial-project-handoff
+          path: AgendaComercial-Proyecto-Continuidad.zip
+          if-no-files-found: error
