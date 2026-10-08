@@ -41,7 +41,7 @@ object BudgetXlsxExporter {
             val productImages = coroutineScope {
                 lines.map { line ->
                     async {
-                        fetchProductImage(
+                        if (line.product.webUrl.isBlank()) null else fetchProductImage(
                             pageUrl = line.product.webUrl,
                             productName = line.product.name
                         )
@@ -509,7 +509,7 @@ object BudgetXlsxExporter {
         )
 
         sb.append(
-            """<dimension ref="A1:H$totalRow"/>"""
+            """<dimension ref="A1:J$totalRow"/>"""
         )
 
         sb.append(
@@ -530,6 +530,8 @@ object BudgetXlsxExporter {
               <col min="4" max="5" width="10" customWidth="1"/>
               <col min="6" max="7" width="14" customWidth="1"/>
               <col min="8" max="8" width="46" customWidth="1"/>
+              <col min="9" max="9" width="20" customWidth="1"/>
+              <col min="10" max="10" width="25" customWidth="1"/>
             </cols>"""
         )
 
@@ -577,10 +579,12 @@ object BudgetXlsxExporter {
             "Cajas",
             "Precio/unidad",
             "Importe",
-            "Descripción"
+            "Descripción",
+            "Tiempo de cocción (min)",
+            "Temperatura de cocción (°C)"
         )
 
-        sb.append("<row r=\"10\" ht=\"28\" customHeight=\"1\">")
+        sb.append("<row r=\"10\" ht=\"40\" customHeight=\"1\">")
         headers.forEachIndexed { index, value ->
             sb.append(
                 cell(
@@ -615,6 +619,8 @@ object BudgetXlsxExporter {
             sb.append(numberCell("F$row", line.pricePerUnit, 5))
             sb.append(numberCell("G$row", amount, 5))
             sb.append(cell("H$row", line.product.description, 4))
+            sb.append(cell("I$row", line.cookingTime.trim(), 4))
+            sb.append(cell("J$row", line.cookingTemperature.trim(), 4))
             sb.append("</row>")
         }
 
@@ -627,15 +633,15 @@ object BudgetXlsxExporter {
 
         if (lines.isNotEmpty()) {
             sb.append(
-                """<autoFilter ref="B10:H$lastProductRow"/>"""
+                """<autoFilter ref="B10:J$lastProductRow"/>"""
             )
         }
 
         sb.append(
             """<mergeCells count="3">
-              <mergeCell ref="A1:H1"/>
-              <mergeCell ref="A2:H2"/>
-              <mergeCell ref="A3:H3"/>
+              <mergeCell ref="A1:J1"/>
+              <mergeCell ref="A2:J2"/>
+              <mergeCell ref="A3:J3"/>
             </mergeCells>"""
         )
 
