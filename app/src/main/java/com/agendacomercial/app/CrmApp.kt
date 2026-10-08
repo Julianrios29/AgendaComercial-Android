@@ -2235,6 +2235,14 @@ private fun BudgetScreen(
         )
     }
 
+    // Estos datos se almacenan en el dispositivo, no en el repositorio público.
+    var sellerName by remember {
+        mutableStateOf(prefs.getString("seller_name", "Julián Ríos") ?: "Julián Ríos")
+    }
+    var sellerPhone by remember {
+        mutableStateOf(prefs.getString("seller_phone", "") ?: "")
+    }
+
     var search by remember { mutableStateOf("") }
     val selected = remember {
         mutableStateMapOf<String, BudgetDraftLine>()
@@ -2272,7 +2280,9 @@ private fun BudgetScreen(
                     context = context,
                     uri = uri,
                     client = client,
-                    lines = pendingLines
+                    lines = pendingLines,
+                    sellerName = sellerName.trim(),
+                    sellerPhone = sellerPhone.trim()
                 )
 
                 exporting = false
@@ -2318,7 +2328,8 @@ private fun BudgetScreen(
         selected[product.id] = transform(lineFor(product))
     }
 
-    val canGenerate = selected.isNotEmpty() &&
+    val canGenerate = sellerName.isNotBlank() && sellerPhone.isNotBlank() &&
+        selected.isNotEmpty() &&
         selected.all { (id, draft) ->
             draft.code.isNotBlank() &&
                 (draft.priceText.replace(",", ".").toDoubleOrNull() ?: 0.0) > 0.0 &&
@@ -2350,6 +2361,48 @@ private fun BudgetScreen(
             contentPadding = PaddingValues(16.dp),
             verticalArrangement = Arrangement.spacedBy(10.dp)
         ) {
+            item {
+                Card(
+                    colors = CardDefaults.cardColors(containerColor = CorporateSurfaceAlt)
+                ) {
+                    Column(
+                        Modifier.padding(14.dp),
+                        verticalArrangement = Arrangement.spacedBy(8.dp)
+                    ) {
+                        Text(
+                            "Datos que aparecerán en el presupuesto",
+                            color = CorporateGold,
+                            fontWeight = FontWeight.Bold
+                        )
+                        OutlinedTextField(
+                            value = sellerName,
+                            onValueChange = { value ->
+                                sellerName = value
+                                prefs.edit().putString("seller_name", value).apply()
+                            },
+                            label = { Text("Nombre") },
+                            singleLine = true,
+                            modifier = Modifier.fillMaxWidth()
+                        )
+                        OutlinedTextField(
+                            value = sellerPhone,
+                            onValueChange = { value ->
+                                sellerPhone = value
+                                prefs.edit().putString("seller_phone", value).apply()
+                            },
+                            label = { Text("Teléfono profesional") },
+                            keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Phone),
+                            singleLine = true,
+                            modifier = Modifier.fillMaxWidth()
+                        )
+                        Text(
+                            "Estos datos se recordarán en este móvil para próximos presupuestos.",
+                            style = MaterialTheme.typography.bodySmall
+                        )
+                    }
+                }
+            }
+
             item {
                 Card(
                     colors = CardDefaults.cardColors(
