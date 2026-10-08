@@ -38,13 +38,34 @@ object BudgetXlsxExporter {
         sellerPhone: String
     ): BudgetExportResult = withContext(Dispatchers.IO) {
         runCatching {
+            // Los datos privados NO se utilizan para realizar búsquedas web.
+            // Se consultan únicamente URLs fijas de categorías públicas del fabricante.
             val productImages = coroutineScope {
+                val categories = lines.map { publicCategoryUrl(it.product) }.distinct()
+                val publicPages = categories.map { url ->
+                    async {
+                        url to runCatching { downloadText(url) }.getOrNull()
+                    }
+                }.awaitAll().toMap()
+
                 lines.map { line ->
                     async {
-                        if (line.product.webUrl.isBlank()) null else fetchProductImage(
-                            pageUrl = line.product.webUrl,
-                            productName = line.product.name
-                        )
+                        val product = line.product
+                        val exactPublicPage = product.webUrl.takeIf {
+                            it.startsWith("https://pasolasl.com/tienda/")
+                        }
+                        val fromPage = exactPublicPage?.let {
+                            fetchProductImage(it, product.name)
+                        }
+                        fromPage ?: publicPages[publicCategoryUrl(product)]?.let { html ->
+                            findPublicCatalogPhoto(
+                                html = html,
+                                productName = product.name,
+                                baseUrl = publicCategoryUrl(product)
+                            )?.let { imageUrl ->
+                                fetchImageBytes(imageUrl)
+                            }
+                        }
                     }
                 }.awaitAll()
             }
@@ -243,8 +264,8 @@ object BudgetXlsxExporter {
                     oneCellImage(
                         col = 0,
                         row = 10 + index,
-                        widthPx = 115,
-                        heightPx = 78,
+                        widthPx = 78,
+                        heightPx = 62,
                         id = imageId,
                         name = lines[index].product.name,
                         relationId = relationId
@@ -508,13 +529,14 @@ object BudgetXlsxExporter {
                 xmlns:r="http://schemas.openxmlformats.org/officeDocument/2006/relationships">"""
         )
 
+        sb.append("""<sheetPr><pageSetUpPr fitToPage="1" autoPageBreaks="0"/></sheetPr>""")
         sb.append(
             """<dimension ref="A1:J$totalRow"/>"""
         )
 
         sb.append(
             """<sheetViews>
-              <sheetView workbookViewId="0">
+              <sheetView workbookViewId="0" showGridLines="0">
                 <pane ySplit="10" topLeftCell="A11" activePane="bottomLeft" state="frozen"/>
               </sheetView>
             </sheetViews>"""
@@ -524,24 +546,26 @@ object BudgetXlsxExporter {
 
         sb.append(
             """<cols>
-              <col min="1" max="1" width="18" customWidth="1"/>
-              <col min="2" max="2" width="17" customWidth="1"/>
-              <col min="3" max="3" width="30" customWidth="1"/>
-              <col min="4" max="5" width="10" customWidth="1"/>
-              <col min="6" max="7" width="14" customWidth="1"/>
-              <col min="8" max="8" width="46" customWidth="1"/>
-              <col min="9" max="9" width="20" customWidth="1"/>
-              <col min="10" max="10" width="25" customWidth="1"/>
+              <col min="1" max="1" width="12" customWidth="1"/>
+              <col min="2" max="2" width="9" customWidth="1"/>
+              <col min="3" max="3" width="28" customWidth="1"/>
+              <col min="4" max="4" width="8" customWidth="1"/>
+              <col min="5" max="5" width="7" customWidth="1"/>
+              <col min="6" max="6" width="12" customWidth="1"/>
+              <col min="7" max="7" width="13" customWidth="1"/>
+              <col min="8" max="8" width="14" customWidth="1"/>
+              <col min="9" max="9" width="11" customWidth="1"/>
+              <col min="10" max="10" width="11" customWidth="1"/>
             </cols>"""
         )
 
         sb.append("<sheetData>")
 
-        sb.append("<row r=\"1\" ht=\"42\" customHeight=\"1\">")
+        sb.append("<row r=\"1\" ht=\"30\" customHeight=\"1\">")
         sb.append(cell("A1", "PRESUPUESTO", 1))
         sb.append("</row>")
 
-        sb.append("<row r=\"2\" ht=\"28\" customHeight=\"1\">")
+        sb.append("<row r=\"2\" ht=\"24\" customHeight=\"1\">")
         sb.append(cell("A2", sellerName.trim(), 2))
         sb.append("</row>")
 
@@ -577,14 +601,14 @@ object BudgetXlsxExporter {
             "Producto",
             "U./caja",
             "Cajas",
-            "Precio/unidad",
+            "€/unidad",
             "Importe",
-            "Descripción",
-            "Tiempo de cocción (min)",
-            "Temperatura de cocción (°C)"
+            "Peso / detalle",
+            "Cocción min",
+            "Cocción °C"
         )
 
-        sb.append("<row r=\"10\" ht=\"40\" customHeight=\"1\">")
+        sb.append("<row r=\"10\" ht=\"28\" customHeight=\"1\">")
         headers.forEachIndexed { index, value ->
             sb.append(
                 cell(
@@ -604,7 +628,7 @@ object BudgetXlsxExporter {
                     line.pricePerUnit
 
             sb.append(
-                "<row r=\"$row\" ht=\"72\" customHeight=\"1\">"
+                "<row r=\"$row\" ht=\"53\" customHeight=\"1\">"
             )
             sb.append(cell("B$row", line.code, 4))
             sb.append(cell("C$row", line.product.name, 4))
@@ -645,14 +669,19 @@ object BudgetXlsxExporter {
             </mergeCells>"""
         )
 
+        sb.append("""<printOptions horizontalCentered="1" gridLines="0" headings="0"/>""")
         sb.append(
             """<pageMargins
-                left="0.4"
-                right="0.4"
-                top="0.5"
-                bottom="0.5"
-                header="0.2"
-                footer="0.2"/>"""
+                left="0.25"
+                right="0.25"
+                top="0.3"
+                bottom="0.3"
+                header="0.15"
+                footer="0.15"/>"""
+        )
+        sb.append(
+            """<pageSetup paperSize="9" orientation="landscape"
+                fitToWidth="1" fitToHeight="1"/>"""
         )
 
         sb.append("""<drawing r:id="rId1"/>""")
@@ -696,6 +725,113 @@ object BudgetXlsxExporter {
             n = (n - 1) / 26
         }
         return result.reverse().toString()
+    }
+
+    private fun publicCategoryUrl(product: BudgetCatalogProduct): String {
+        // Solo rutas de categorías PÚBLICAS, nunca consulta con código/precio/nombre privado.
+        val name = normalized(product.name)
+        val category = normalized(product.category)
+        val slug = when {
+            name.startsWith("remini") || category.contains("remini") -> "reminis"
+            category.contains("snack") || name.startsWith("airbag") ||
+                name.startsWith("cracker") -> "snacks"
+            category.contains("barrot") || name.startsWith("barrot") -> "barrots"
+            category.contains("motlle") || category.contains("molde") ||
+                name.startsWith("motlle") -> "moldes"
+            category.contains("coca") || name.startsWith("coca") ||
+                name.startsWith("pa de vidre") -> "cocas"
+            category.contains("dolc") -> "dulces"
+            category.contains("placa") || category.contains("base") ||
+                name.startsWith("base") || name.startsWith("placa") -> "placa-base"
+            category.contains("33g") || category.contains("60g") ||
+                name.startsWith("panet") || name.startsWith("rampoina") ||
+                category.contains("pages") -> "panecillos"
+            else -> "bocadillos"
+        }
+        return "https://pasolasl.com/categoria/$slug/"
+    }
+
+    private fun normalizePublicName(value: String): String {
+        var result = normalized(value)
+        val aliases = mapOf(
+            "motlle" to "molde", "panet" to "panecillo",
+            "ullada" to "alveolada", "llavors" to "semillas",
+            "cereals" to "cereales", "nou" to "nuez", "nous" to "nueces",
+            "vidre" to "cristal", "sègol" to "centeno",
+            "se gol" to "centeno", "blanc" to "blanco",
+            "xocolata" to "chocolate", "pebres" to "pimientas",
+            "baguette" to "baguette", "xia" to "chia",
+            "pageset" to "payesito", "brioix" to "brioche",
+            "integral" to "integral"
+        )
+        aliases.forEach { (before, after) ->
+            result = result.replace(Regex("\\b" + Regex.escape(before) + "\\b"), after)
+        }
+        return result
+    }
+
+    private fun findPublicCatalogPhoto(
+        html: String,
+        productName: String,
+        baseUrl: String
+    ): String? {
+        val stopWords = setOf("de", "la", "el", "amb", "con", "i", "y", "del", "pa", "pan")
+        val key = normalizePublicName(productName)
+        val words = key.split(" ").filter { it.length >= 3 && it !in stopWords }
+            .toSet()
+        if (words.isEmpty()) return null
+
+        var bestScore = 0.0
+        var bestUrl: String? = null
+        var ambiguous = false
+        val imageTags = Regex(
+            """<img\\b[^>]*>""",
+            setOf(RegexOption.IGNORE_CASE, RegexOption.DOT_MATCHES_ALL)
+        ).findAll(html)
+        imageTags.forEach { match ->
+            val tag = match.value
+            val alt = attribute(tag, "alt") ?: attribute(tag, "title") ?: ""
+            val normalizedAlt = normalizePublicName(alt)
+            val candidateWords = normalizedAlt.split(" ").toSet()
+            val matched = words.count { it in candidateWords }
+            val exact = key == normalizedAlt
+            val sufficient = if (words.size == 1) exact else matched >= 2 &&
+                matched.toDouble() / words.size >= 0.75
+            if (!sufficient) return@forEach
+            val src = attribute(tag, "data-src") ?:
+                attribute(tag, "data-lazy-src") ?: attribute(tag, "src")
+            if (src.isNullOrBlank() || src.startsWith("data:")) return@forEach
+            val absolute = runCatching { URL(URL(baseUrl), cleanUrl(src)).toString() }
+                .getOrNull() ?: return@forEach
+            if (!isAllowedPublicImageUrl(absolute)) return@forEach
+            val score = if (exact) 2.0 else matched.toDouble() / words.size
+            if (score > bestScore) {
+                bestScore = score
+                bestUrl = absolute
+                ambiguous = false
+            } else if (score == bestScore && absolute != bestUrl) {
+                ambiguous = true
+            }
+        }
+        return if (ambiguous) null else bestUrl
+    }
+
+    private fun isAllowedPublicImageUrl(url: String): Boolean {
+        return runCatching {
+            val parsed = URL(url)
+            parsed.protocol == "https" &&
+                (parsed.host == "pasolasl.com" || parsed.host == "www.pasolasl.com")
+        }.getOrDefault(false)
+    }
+
+    private fun fetchImageBytes(url: String): ByteArray? {
+        if (!isAllowedPublicImageUrl(url)) return null
+        return runCatching {
+            val original = downloadBytes(url)
+            val bitmap = BitmapFactory.decodeByteArray(original, 0, original.size)
+                ?: return@runCatching null
+            bitmapToPng(bitmap)
+        }.getOrNull()
     }
 
     private fun fetchProductImage(
