@@ -6,7 +6,7 @@
         android:fullBackupContent="false"
         android:icon="@mipmap/pa_sola_app"
         android:roundIcon="@mipmap/pa_sola_app"
-        android:label="Agenda Comercial v1 Pruebas"
+        android:label="Agenda Comercial 1.0.1 Pruebas"
         android:theme="@style/Theme.AgendaComercial">
 
         <provider

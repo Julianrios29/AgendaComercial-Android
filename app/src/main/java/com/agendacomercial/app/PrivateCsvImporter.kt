@@ -31,10 +31,57 @@ internal object PrivateCsvImporter {
             }
             output.toByteArray().toString(Charsets.UTF_8).removePrefix("\uFEFF")
         } ?: error("No se puede abrir el archivo seleccionado")
-        val lines = content.lineSequence().map { it.trimEnd('\r') }
-            .filter { it.isNotBlank() }.map { it.split(';').map(String::trim) }.toList()
-        require(lines.size > 1) { "El CSV no contiene registros" }
-        return lines
+        val rows = parseSemicolonCsv(content)
+        require(rows.size > 1) { "El CSV no contiene registros" }
+        return rows
+    }
+
+    /**
+     * Analiza CSV con ; como separador y admite comillas, ; dentro de textos,
+     * comillas duplicadas y saltos de línea en campos entrecomillados.
+     */
+    private fun parseSemicolonCsv(content: String): List<List<String>> {
+        val rows = mutableListOf<List<String>>()
+        var currentRow = mutableListOf<String>()
+        val field = StringBuilder()
+        var quoted = false
+        var i = 0
+
+        fun finishField() {
+            currentRow.add(field.toString().trim())
+            field.setLength(0)
+        }
+
+        fun finishRow() {
+            finishField()
+            if (currentRow.any { it.isNotEmpty() }) rows.add(currentRow)
+            currentRow = mutableListOf()
+        }
+
+        while (i < content.length) {
+            when (val ch = content[i]) {
+                '"' -> {
+                    if (quoted && i + 1 < content.length && content[i + 1] == '"') {
+                        field.append('"')
+                        i++
+                    } else {
+                        quoted = !quoted
+                    }
+                }
+                ';' -> if (quoted) field.append(ch) else finishField()
+                '\r', '\n' -> if (quoted) {
+                    field.append(ch)
+                } else {
+                    if (ch == '\r' && i + 1 < content.length && content[i + 1] == '\n') i++
+                    finishRow()
+                }
+                else -> field.append(ch)
+            }
+            i++
+        }
+        require(!quoted) { "CSV incorrecto: comillas sin cerrar" }
+        if (field.isNotEmpty() || currentRow.isNotEmpty()) finishRow()
+        return rows
     }
 
     private fun column(headers: List<String>, name: String): Int {
@@ -124,17 +171,18 @@ internal object PrivateCsvImporter {
         val temperature = column(h, "cooking_temperature_c")
         val note = column(h, "cooking_note")
         val seen = HashSet<String>()
-        val parsed = rows.drop(1).map { fields ->
-            require(fields.size == h.size) { "El CSV de productos tiene columnas incorrectas" }
+        val parsed = rows.drop(1).mapIndexed { index, fields ->
+            val lineNumber = index + 2
+            require(fields.size == h.size) { "Fila $lineNumber: el CSV tiene columnas incorrectas" }
             val c = fields[code]
             val priceText = fields[price].replace(',', '.')
-            require(codePattern.matches(c) && seen.add(c)) { "Código de producto repetido o inválido" }
+            require(codePattern.matches(c) && seen.add(c)) { "Fila $lineNumber: código repetido o inválido" }
             require(fields[name].isNotBlank() && numericPattern.matches(priceText) &&
-                (priceText.toDoubleOrNull() ?: 0.0) > 0.0) { "Producto sin precio válido" }
+                (priceText.toDoubleOrNull() ?: 0.0) > 0.0) { "Fila $lineNumber: precio inválido" }
             val boxUnits = fields[units].toIntOrNull()
-            require(boxUnits != null && boxUnits > 0) { "Unidades por caja incorrectas" }
+            require(boxUnits != null && boxUnits > 0) { "Fila $lineNumber: unidades por caja incorrectas" }
             require(timePattern.matches(fields[cooking]) && tempPattern.matches(fields[temperature])) {
-                "Información de cocción incorrecta"
+                "Fila $lineNumber: cocción incorrecta"
             }
             ProductRow(
                 code = c, name = fields[name], category = fields[category],
