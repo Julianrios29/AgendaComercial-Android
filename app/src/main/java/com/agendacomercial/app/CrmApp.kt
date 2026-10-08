@@ -2351,16 +2351,16 @@ private fun BudgetScreen(
         }
     }
 
-    val excelLauncher = rememberLauncherForActivityResult(
+    val pdfLauncher = rememberLauncherForActivityResult(
         contract = ActivityResultContracts.CreateDocument(
-            "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
+            "application/pdf"
         )
     ) { uri ->
         if (uri != null && pendingLines.isNotEmpty()) {
             exporting = true
 
             exportScope.launch {
-                val result = BudgetXlsxExporter.write(
+                val result = BudgetPdfExporter.write(
                     context = context,
                     uri = uri,
                     client = client,
@@ -2373,12 +2373,12 @@ private fun BudgetScreen(
 
                 val message =
                     if (!result.success) {
-                        "No se ha podido crear el presupuesto" +
+                        "No se ha podido crear el PDF" +
                             (result.errorMessage?.let { ": $it" } ?: "")
                     } else if (result.imagesIncluded == result.productCount) {
-                        "Presupuesto guardado con fotos"
+                        "PDF guardado con fotos"
                     } else {
-                        "Presupuesto guardado · " +
+                        "PDF guardado · " +
                             result.imagesIncluded +
                             " de " +
                             result.productCount +
@@ -2710,17 +2710,17 @@ private fun BudgetScreen(
                             Locale("es", "ES")
                         ).format(Date())
 
-                        excelLauncher.launch(
-                            "Presupuesto_${safeClient}_${date}.xlsx"
+                        pdfLauncher.launch(
+                            "Presupuesto_${safeClient}_${date}.pdf"
                         )
                     },
                     modifier = Modifier.fillMaxWidth()
                 ) {
                     Text(
                         if (exporting) {
-                            "Creando Excel y descargando fotos…"
+                            "Creando PDF y descargando fotos…"
                         } else {
-                            "Crear Excel de presupuesto (" +
+                            "Crear PDF de presupuesto (" +
                                 selected.size +
                                 " productos)"
                         }
