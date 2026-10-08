@@ -6,7 +6,11 @@ data class BudgetCatalogProduct(
     val unitsPerBox: Int,
     val description: String,
     val category: String,
-    val webUrl: String
+    val webUrl: String,
+    val unitPrice: Double = 0.0,
+    val code: String = "",
+    val cookingTime: String = "",
+    val cookingTemperature: String = ""
 )
 
 val PaSolaBudgetCatalog = listOf(
@@ -216,5 +220,7 @@ data class BudgetLine(
     val product: BudgetCatalogProduct,
     val code: String,
     val boxes: Int,
-    val pricePerUnit: Double
+    val pricePerUnit: Double,
+    val cookingTime: String = "",
+    val cookingTemperature: String = ""
 )
