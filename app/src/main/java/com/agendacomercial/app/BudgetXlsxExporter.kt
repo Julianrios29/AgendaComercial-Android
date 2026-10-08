@@ -38,37 +38,7 @@ object BudgetXlsxExporter {
         sellerPhone: String
     ): BudgetExportResult = withContext(Dispatchers.IO) {
         runCatching {
-            // Los datos privados NO se utilizan para realizar búsquedas web.
-            // Se consultan únicamente URLs fijas de categorías públicas del fabricante.
-            val productImages = coroutineScope {
-                val categories = lines.map { publicCategoryUrl(it.product) }.distinct()
-                val publicPages = categories.map { url ->
-                    async {
-                        url to runCatching { downloadText(url) }.getOrNull()
-                    }
-                }.awaitAll().toMap()
-
-                lines.map { line ->
-                    async {
-                        val product = line.product
-                        val exactPublicPage = product.webUrl.takeIf {
-                            it.startsWith("https://pasolasl.com/tienda/")
-                        }
-                        val fromPage = exactPublicPage?.let {
-                            fetchProductImage(it, product.name)
-                        }
-                        fromPage ?: publicPages[publicCategoryUrl(product)]?.let { html ->
-                            findPublicCatalogPhoto(
-                                html = html,
-                                productName = product.name,
-                                baseUrl = publicCategoryUrl(product)
-                            )?.let { imageUrl ->
-                                fetchImageBytes(imageUrl)
-                            }
-                        }
-                    }
-                }.awaitAll()
-            }
+            val productImages = loadPublicProductImages(lines)
 
             context.contentResolver.openOutputStream(uri)?.use { output ->
                 writeWorkbook(
@@ -94,6 +64,43 @@ object BudgetXlsxExporter {
                 errorMessage = error.message ?: error.javaClass.simpleName
             )
         }
+    }
+
+    // La búsqueda de fotos solamente visita categorías públicas predefinidas.
+    // No se transmiten precios, códigos ni información de los clientes.
+    internal suspend fun loadPublicProductImages(lines: List<BudgetLine>): List<ByteArray?> {
+        // Los datos privados NO se utilizan para realizar búsquedas web.
+        // Se consultan únicamente URLs fijas de categorías públicas del fabricante.
+        return coroutineScope {
+            val categories = lines.map { publicCategoryUrl(it.product) }.distinct()
+            val publicPages = categories.map { url ->
+                async {
+                    url to runCatching { downloadText(url) }.getOrNull()
+                }
+            }.awaitAll().toMap()
+
+            lines.map { line ->
+                async {
+                    val product = line.product
+                    val exactPublicPage = product.webUrl.takeIf {
+                        it.startsWith("https://pasolasl.com/tienda/")
+                    }
+                    val fromPage = exactPublicPage?.let {
+                        fetchProductImage(it, product.name)
+                    }
+                    fromPage ?: publicPages[publicCategoryUrl(product)]?.let { html ->
+                        findPublicCatalogPhoto(
+                            html = html,
+                            productName = product.name,
+                            baseUrl = publicCategoryUrl(product)
+                        )?.let { imageUrl ->
+                            fetchImageBytes(imageUrl)
+                        }
+                    }
+                }
+            }.awaitAll()
+        }
+
     }
 
     private fun writeWorkbook(
