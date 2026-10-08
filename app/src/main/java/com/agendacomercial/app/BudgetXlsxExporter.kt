@@ -33,13 +33,11 @@ object BudgetXlsxExporter {
         context: Context,
         uri: Uri,
         client: Client,
-        lines: List<BudgetLine>
+        lines: List<BudgetLine>,
+        sellerName: String,
+        sellerPhone: String
     ): BudgetExportResult = withContext(Dispatchers.IO) {
         runCatching {
-            val logo = context.resources
-                .openRawResource(R.mipmap.pa_sola_legacy)
-                .use { it.readBytes() }
-
             val productImages = coroutineScope {
                 lines.map { line ->
                     async {
@@ -56,7 +54,8 @@ object BudgetXlsxExporter {
                     output = output,
                     client = client,
                     lines = lines,
-                    logoBytes = logo,
+                    sellerName = sellerName,
+                    sellerPhone = sellerPhone,
                     productImages = productImages
                 )
             } ?: error("No se pudo abrir el archivo de destino")
@@ -80,7 +79,8 @@ object BudgetXlsxExporter {
         output: OutputStream,
         client: Client,
         lines: List<BudgetLine>,
-        logoBytes: ByteArray,
+        sellerName: String,
+        sellerPhone: String,
         productImages: List<ByteArray?>
     ) {
         ZipOutputStream(output).use { zip ->
@@ -90,7 +90,7 @@ object BudgetXlsxExporter {
             put(zip, "xl/_rels/workbook.xml.rels", workbookRels())
             put(zip, "xl/styles.xml", styles())
             put(zip, "xl/theme/theme1.xml", theme())
-            put(zip, "xl/worksheets/sheet1.xml", sheet(client, lines))
+            put(zip, "xl/worksheets/sheet1.xml", sheet(client, lines, sellerName, sellerPhone))
             put(zip, "xl/worksheets/_rels/sheet1.xml.rels", sheetRels())
             put(
                 zip,
@@ -102,7 +102,6 @@ object BudgetXlsxExporter {
                 "xl/drawings/_rels/drawing1.xml.rels",
                 drawingRels(productImages)
             )
-            putBytes(zip, "xl/media/logo.png", logoBytes)
 
             productImages.forEachIndexed { index, bytes ->
                 if (bytes != null) {
@@ -205,13 +204,7 @@ object BudgetXlsxExporter {
             """<Relationships xmlns="http://schemas.openxmlformats.org/package/2006/relationships">"""
         )
 
-        sb.append(
-            """<Relationship Id="rId1"
-                Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/image"
-                Target="../media/logo.png"/>"""
-        )
-
-        var relationId = 2
+        var relationId = 1
         productImages.forEachIndexed { index, bytes ->
             if (bytes != null) {
                 sb.append(
@@ -242,20 +235,8 @@ object BudgetXlsxExporter {
                 xmlns:r="http://schemas.openxmlformats.org/officeDocument/2006/relationships">"""
         )
 
-        sb.append(
-            twoCellImage(
-                fromCol = 0,
-                fromRow = 0,
-                toCol = 2,
-                toRow = 4,
-                id = 1,
-                name = "Logo Pà Solà",
-                relationId = 1
-            )
-        )
-
-        var relationId = 2
-        var imageId = 2
+        var relationId = 1
+        var imageId = 1
         productImages.forEachIndexed { index, bytes ->
             if (bytes != null && index < lines.size) {
                 sb.append(
@@ -430,9 +411,9 @@ object BudgetXlsxExporter {
 
     private fun theme() =
         """<?xml version="1.0" encoding="UTF-8" standalone="yes"?>
-<a:theme name="Pà Solà" xmlns:a="http://schemas.openxmlformats.org/drawingml/2006/main">
+<a:theme name="Presupuesto" xmlns:a="http://schemas.openxmlformats.org/drawingml/2006/main">
   <a:themeElements>
-    <a:clrScheme name="Pà Solà">
+    <a:clrScheme name="Presupuesto">
       <a:dk1><a:srgbClr val="050505"/></a:dk1>
       <a:lt1><a:srgbClr val="FFFFFF"/></a:lt1>
       <a:dk2><a:srgbClr val="202020"/></a:dk2>
@@ -460,7 +441,7 @@ object BudgetXlsxExporter {
       </a:minorFont>
     </a:fontScheme>
 
-    <a:fmtScheme name="Pà Solà">
+    <a:fmtScheme name="Presupuesto">
       <a:fillStyleLst>
         <a:solidFill><a:schemeClr val="phClr"/></a:solidFill>
         <a:solidFill><a:schemeClr val="phClr"/></a:solidFill>
@@ -487,16 +468,14 @@ object BudgetXlsxExporter {
 
     private fun sheet(
         client: Client,
-        lines: List<BudgetLine>
+        lines: List<BudgetLine>,
+        sellerName: String,
+        sellerPhone: String
     ): String {
         val date = SimpleDateFormat(
             "dd/MM/yyyy",
             Locale("es", "ES")
         ).format(Date())
-
-        val companySummary =
-            "Panaderos desde 1615. Pan artesanal para hostelería y alta gastronomía, " +
-            "elaborado con masa madre, harinas seleccionadas y sin aditivos."
 
         val contact = listOf(
             client.contactPerson,
@@ -556,16 +535,16 @@ object BudgetXlsxExporter {
 
         sb.append("<sheetData>")
 
-        sb.append("<row r=\"1\" ht=\"65\" customHeight=\"1\">")
-        sb.append(cell("C1", "PRESUPUESTO PÀ SOLÀ", 1))
+        sb.append("<row r=\"1\" ht=\"42\" customHeight=\"1\">")
+        sb.append(cell("A1", "PRESUPUESTO", 1))
         sb.append("</row>")
 
-        sb.append("<row r=\"2\" ht=\"36\" customHeight=\"1\">")
-        sb.append(cell("C2", companySummary, 2))
+        sb.append("<row r=\"2\" ht=\"28\" customHeight=\"1\">")
+        sb.append(cell("A2", sellerName.trim(), 2))
         sb.append("</row>")
 
         sb.append("<row r=\"3\">")
-        sb.append(cell("C3", "www.pasolasl.com", 2))
+        sb.append(cell("A3", "Tel. " + sellerPhone.trim(), 2))
         sb.append("</row>")
 
         sb.append("<row r=\"5\">")
@@ -654,9 +633,9 @@ object BudgetXlsxExporter {
 
         sb.append(
             """<mergeCells count="3">
-              <mergeCell ref="C1:H1"/>
-              <mergeCell ref="C2:H2"/>
-              <mergeCell ref="C3:H3"/>
+              <mergeCell ref="A1:H1"/>
+              <mergeCell ref="A2:H2"/>
+              <mergeCell ref="A3:H3"/>
             </mergeCells>"""
         )
 
