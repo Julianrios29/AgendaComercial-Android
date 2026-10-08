@@ -12,14 +12,14 @@ android {
         applicationId = "com.pasola.agendacomercial"
         minSdk = 23
         targetSdk = 35
-        versionCode = 34
-        versionName = "1.0.3"
+        versionCode = 35
+        versionName = "1.0.4"
     }
 
     // La APK de prueba se instala junto a versiones anteriores sin alterar sus datos.
     buildTypes {
         getByName("debug") {
-            applicationIdSuffix = ".v103test"
+            applicationIdSuffix = ".v104test"
             versionNameSuffix = "-pruebas"
         }
     }

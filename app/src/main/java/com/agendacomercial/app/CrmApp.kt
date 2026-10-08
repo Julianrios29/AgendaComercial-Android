@@ -2233,7 +2233,7 @@ private fun PrivateDataScreen(vm: AppViewModel) {
                 .onSuccess {
                     importedClients = it
                     vm.reloadPrivateData()
-                    Toast.makeText(context, "Clientes importados: $it", Toast.LENGTH_LONG).show()
+                    Toast.makeText(context, "Clientes procesados: $it", Toast.LENGTH_LONG).show()
                 }.onFailure {
                     Toast.makeText(context, "Error al importar clientes: ${it.message}", Toast.LENGTH_LONG).show()
                 }
@@ -2282,8 +2282,9 @@ private fun PrivateDataScreen(vm: AppViewModel) {
             }
             item {
                 Text(
-                    "La importación conserva los clientes ya registrados y sus visitas. " +
-                        "Si repites una importación, los códigos de cliente ya importados no se duplican.",
+                    "La importación conserva las visitas y los clientes ya registrados. " +
+                        "Si importas un CSV actualizado, modifica datos anteriores solo si " +
+                        "no los has editado manualmente. No duplica códigos de cliente.",
                     style = MaterialTheme.typography.bodySmall
                 )
             }
