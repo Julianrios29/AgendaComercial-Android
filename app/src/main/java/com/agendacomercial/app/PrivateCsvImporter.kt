@@ -158,16 +158,16 @@ internal object PrivateCsvImporter {
                 } else {
                     appDb.updateClient(
                         id = old.id,
-                        name = preferCsv(old.name, item.name, previous.name),
+                        name = preferCsv(old.name, item.name, previous?.name),
                         business = old.businessName,
                         nif = old.nif,
                         bankAccount = old.bankAccount,
-                        contact = preferCsv(old.contactPerson, item.contact, previous.contact),
-                        phone = preferCsv(old.phone, item.phone, previous.phone),
-                        email = preferCsv(old.email, item.email, previous.email),
-                        address = preferCsv(old.address, item.address, previous.address),
-                        city = preferCsv(old.city, item.city, previous.city),
-                        postalCode = preferCsv(old.postalCode, item.postal, previous.postal),
+                        contact = preferCsv(old.contactPerson, item.contact, previous?.contact),
+                        phone = preferCsv(old.phone, item.phone, previous?.phone),
+                        email = preferCsv(old.email, item.email, previous?.email),
+                        address = preferCsv(old.address, item.address, previous?.address),
+                        city = preferCsv(old.city, item.city, previous?.city),
+                        postalCode = preferCsv(old.postalCode, item.postal, previous?.postal),
                         observations = old.observations,
                         isProspect = old.isProspect
                     )
