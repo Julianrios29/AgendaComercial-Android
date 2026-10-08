@@ -49,6 +49,7 @@ private sealed class Screen {
     data object Clients : Screen()
     data object Prospects : Screen()
     data object Summary : Screen()
+    data object PrivateData : Screen()
     data class NewParty(val prospect: Boolean) : Screen()
     data class Detail(val id: Long) : Screen()
     data class EditParty(val id: Long) : Screen()
@@ -70,7 +71,8 @@ fun CrmApp(vm: AppViewModel) {
             screen is Screen.Agenda ||
             screen is Screen.Clients ||
             screen is Screen.Prospects ||
-            screen is Screen.Summary
+            screen is Screen.Summary ||
+            screen is Screen.PrivateData
 
         Scaffold(
             containerColor = Color.Black,
@@ -113,6 +115,12 @@ fun CrmApp(vm: AppViewModel) {
                             icon = { Text("R") },
                             label = { Text("Resumen") }
                         )
+                        NavigationBarItem(
+                            selected = screen is Screen.PrivateData,
+                            onClick = { screen = Screen.PrivateData },
+                            icon = { Text("D") },
+                            label = { Text("Datos") }
+                        )
                     }
                 }
             }
@@ -142,6 +150,7 @@ fun CrmApp(vm: AppViewModel) {
                     )
 
                     Screen.Summary -> DailySummaryScreen(vm)
+                    Screen.PrivateData -> PrivateDataScreen(vm)
 
                     is Screen.NewParty -> {
                         if (s.prospect) {
@@ -2210,10 +2219,84 @@ private fun NewProspectScreen(
     }
 }
 
+@OptIn(ExperimentalMaterial3Api::class)
+@Composable
+private fun PrivateDataScreen(vm: AppViewModel) {
+    val context = LocalContext.current
+    var importedClients by remember { mutableStateOf(0) }
+    var importedProducts by remember { mutableStateOf(0) }
+    val clientsPicker = rememberLauncherForActivityResult(
+        ActivityResultContracts.OpenDocument()
+    ) { uri ->
+        if (uri != null) {
+            runCatching { PrivateCsvImporter.importClients(context, uri) }
+                .onSuccess {
+                    importedClients = it
+                    vm.reloadPrivateData()
+                    Toast.makeText(context, "Clientes importados: $it", Toast.LENGTH_LONG).show()
+                }.onFailure {
+                    Toast.makeText(context, "Error al importar clientes: ${it.message}", Toast.LENGTH_LONG).show()
+                }
+        }
+    }
+    val productsPicker = rememberLauncherForActivityResult(
+        ActivityResultContracts.OpenDocument()
+    ) { uri ->
+        if (uri != null) {
+            runCatching { PrivateCsvImporter.importProducts(context, uri) }
+                .onSuccess {
+                    importedProducts = it
+                    vm.reloadPrivateData()
+                    Toast.makeText(context, "Productos importados: $it", Toast.LENGTH_LONG).show()
+                }.onFailure {
+                    Toast.makeText(context, "Error al importar catálogo: ${it.message}", Toast.LENGTH_LONG).show()
+                }
+        }
+    }
+    Column(Modifier.fillMaxSize()) {
+        TopAppBar(title = { Text("Datos privados · Versión 1.0", color = CorporateGold) })
+        LazyColumn(
+            contentPadding = PaddingValues(16.dp),
+            verticalArrangement = Arrangement.spacedBy(14.dp)
+        ) {
+            item {
+                Text(
+                    "Importa los archivos CSV desde este móvil. La cartera y los precios " +
+                        "se guardan localmente, no se incluyen en la APK y no se publican.",
+                    style = MaterialTheme.typography.bodyMedium
+                )
+            }
+            item {
+                Button(
+                    onClick = { clientsPicker.launch(arrayOf("text/*", "application/octet-stream")) },
+                    modifier = Modifier.fillMaxWidth()
+                ) { Text("1. Importar clientes (CSV privado)") }
+                Text("Clientes visibles: ${vm.clients.size}; importados en esta sesión: $importedClients")
+            }
+            item {
+                Button(
+                    onClick = { productsPicker.launch(arrayOf("text/*", "application/octet-stream")) },
+                    modifier = Modifier.fillMaxWidth()
+                ) { Text("2. Importar catálogo y cocción (CSV privado)") }
+                Text("Productos del catálogo: ${remember(vm.catalogVersion) { vm.budgetProducts().size }}; importados en esta sesión: $importedProducts")
+            }
+            item {
+                Text(
+                    "La importación conserva los clientes ya registrados y sus visitas. " +
+                        "Si repites una importación, los códigos de cliente ya importados no se duplican.",
+                    style = MaterialTheme.typography.bodySmall
+                )
+            }
+        }
+    }
+}
+
 private data class BudgetDraftLine(
     val code: String,
     val priceText: String,
-    val boxesText: String
+    val boxesText: String,
+    val cookingTimeText: String,
+    val cookingTemperatureText: String
 )
 
 @OptIn(ExperimentalMaterial3Api::class)
@@ -2243,6 +2326,7 @@ private fun BudgetScreen(
         mutableStateOf(prefs.getString("seller_phone", "") ?: "")
     }
 
+    val catalog = remember(vm.catalogVersion) { vm.budgetProducts() }
     var search by remember { mutableStateOf("") }
     val selected = remember {
         mutableStateMapOf<String, BudgetDraftLine>()
@@ -2255,11 +2339,11 @@ private fun BudgetScreen(
     }
     val exportScope = rememberCoroutineScope()
 
-    val filteredProducts = remember(search) {
+    val filteredProducts = remember(search, catalog) {
         if (search.isBlank()) {
-            PaSolaBudgetCatalog
+            catalog
         } else {
-            PaSolaBudgetCatalog.filter {
+            catalog.filter {
                 it.name.contains(search, ignoreCase = true) ||
                     it.category.contains(search, ignoreCase = true) ||
                     it.description.contains(search, ignoreCase = true)
@@ -2312,12 +2396,16 @@ private fun BudgetScreen(
 
     fun lineFor(product: BudgetCatalogProduct): BudgetDraftLine {
         return selected[product.id] ?: BudgetDraftLine(
-            code = prefs.getString("code_" + product.id, "") ?: "",
+            code = prefs.getString("code_" + product.id, null) ?: product.code,
             priceText =
                 prefs.getString("unit_price_" + product.id, null)
-                    ?: prefs.getString("price_" + product.id, "")
-                    ?: "",
-            boxesText = "1"
+                    ?: prefs.getString("price_" + product.id, null)
+                    ?: product.unitPrice.toString(),
+            boxesText = "1",
+            cookingTimeText = prefs.getString("cooking_time_" + product.id, null)
+                ?: product.cookingTime,
+            cookingTemperatureText = prefs.getString("cooking_temp_" + product.id, null)
+                ?: product.cookingTemperature
         )
     }
 
@@ -2334,7 +2422,7 @@ private fun BudgetScreen(
             draft.code.isNotBlank() &&
                 (draft.priceText.replace(",", ".").toDoubleOrNull() ?: 0.0) > 0.0 &&
                 (draft.boxesText.toIntOrNull() ?: 0) > 0 &&
-                PaSolaBudgetCatalog.any { it.id == id }
+                catalog.any { it.id == id }
         }
 
     Column(Modifier.fillMaxSize()) {
@@ -2414,15 +2502,15 @@ private fun BudgetScreen(
                         verticalArrangement = Arrangement.spacedBy(4.dp)
                     ) {
                         Text(
-                            "Catálogo Pà Solà",
+                            "Catálogo privado",
                             color = CorporateGold,
                             fontWeight = FontWeight.Bold
                         )
                         Text(
-                            "Las unidades por caja y descripciones vienen del catálogo web oficial."
+                            "Códigos, precios y unidades reales importados desde tu CSV privado."
                         )
                         Text(
-                            "La web no publica precios ni códigos comerciales: introduce el precio por unidad y el código una vez y la app los recordará.",
+                            "Los tiempos y temperaturas se rellenan automáticamente cuando están disponibles.",
                             style = MaterialTheme.typography.bodySmall
                         )
                     }
@@ -2437,6 +2525,10 @@ private fun BudgetScreen(
                     singleLine = true,
                     modifier = Modifier.fillMaxWidth()
                 )
+            }
+
+            if (catalog.isEmpty()) {
+                item { Text("Importa primero el catálogo en la pestaña Datos.") }
             }
 
             items(
@@ -2538,16 +2630,11 @@ private fun BudgetScreen(
                                 )
                             }
 
-                            TextButton(
-                                onClick = {
-                                    val intent = Intent(
-                                        Intent.ACTION_VIEW,
-                                        Uri.parse(product.webUrl)
-                                    )
-                                    context.startActivity(intent)
-                                }
-                            ) {
-                                Text("Ver ficha web / foto")
+                            // Nunca se envían códigos o tarifas privados a webs externas.
+                            if (product.webUrl.isNotBlank()) {
+                                TextButton(onClick = {
+                                    context.startActivity(Intent(Intent.ACTION_VIEW, Uri.parse(product.webUrl)))
+                                }) { Text("Ver ficha web") }
                             }
                         }
                     }
@@ -2559,8 +2646,7 @@ private fun BudgetScreen(
                     enabled = canGenerate && !exporting,
                     onClick = {
                         val lines = selected.mapNotNull { (id, draft) ->
-                            val product = PaSolaBudgetCatalog
-                                .firstOrNull { it.id == id }
+                            val product = catalog.firstOrNull { it.id == id }
                                 ?: return@mapNotNull null
 
                             val price = draft.priceText
@@ -2576,13 +2662,17 @@ private fun BudgetScreen(
                                 .putString("code_" + id, draft.code.trim())
                                 .putString("unit_price_" + id, draft.priceText.trim())
                                 .putString("price_" + id, draft.priceText.trim())
+                                .putString("cooking_time_" + id, draft.cookingTimeText.trim())
+                                .putString("cooking_temp_" + id, draft.cookingTemperatureText.trim())
                                 .apply()
 
                             BudgetLine(
                                 product = product,
                                 code = draft.code.trim(),
                                 boxes = boxes,
-                                pricePerUnit = price
+                                pricePerUnit = price,
+                                cookingTime = draft.cookingTimeText.trim(),
+                                cookingTemperature = draft.cookingTemperatureText.trim()
                             )
                         }.sortedBy { it.product.name }
 
