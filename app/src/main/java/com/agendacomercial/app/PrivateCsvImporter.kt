@@ -161,6 +161,39 @@ internal object PrivateCsvImporter {
             db.endTransaction()
             store.close()
         }
+        // La pestaña de pedidos existente comparte estas referencias.
+        val mainDb = CrmDb(context)
+        val productsDb = mainDb.writableDatabase
+        productsDb.beginTransaction()
+        try {
+            parsed.forEach { p ->
+                val existing = productsDb.rawQuery(
+                    "SELECT id FROM products WHERE sku=? LIMIT 1",
+                    arrayOf(p.code)
+                ).use { c -> if (c.moveToFirst()) c.getLong(0) else null }
+                val values = ContentValues().apply {
+                    put("sku", p.code)
+                    put("name", p.name)
+                    put("price", p.price)
+                }
+                if (existing == null) {
+                    check(productsDb.insert("products", null, values) > 0) {
+                        "No se ha podido guardar un producto"
+                    }
+                } else {
+                    productsDb.update("products", values, "id=?", arrayOf(existing.toString()))
+                }
+            }
+            // Solo retirar productos ficticios si no tienen pedidos vinculados.
+            productsDb.execSQL(
+                """DELETE FROM products WHERE sku IN ('A001','B001','C001')
+                   AND id NOT IN (SELECT product_id FROM order_items)"""
+            )
+            productsDb.setTransactionSuccessful()
+        } finally {
+            productsDb.endTransaction()
+            mainDb.close()
+        }
         return parsed.size
     }
 
