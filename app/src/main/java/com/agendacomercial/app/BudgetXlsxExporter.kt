@@ -785,7 +785,7 @@ object BudgetXlsxExporter {
         var bestUrl: String? = null
         var ambiguous = false
         val imageTags = Regex(
-            """<img\\b[^>]*>""",
+            """<img\b[^>]*>""",
             setOf(RegexOption.IGNORE_CASE, RegexOption.DOT_MATCHES_ALL)
         ).findAll(html)
         imageTags.forEach { match ->
