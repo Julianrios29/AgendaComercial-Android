@@ -125,11 +125,27 @@ internal object PrivateCsvImporter {
         db.beginTransaction()
         try {
             parsed.forEach { item ->
-                val existing = db.rawQuery(
-                    "SELECT client_id FROM imported_clients WHERE code=?",
+                // Buscamos el registro importado previamente junto con los valores
+                // de la última importación. Esto permite respetar retoques
+                // manuales y actualizar los campos que aún proceden del CSV.
+                val previous = db.rawQuery(
+                    """SELECT client_id,source_name,source_contact,source_phone,
+                              source_email,source_address,source_city,source_postal
+                       FROM imported_clients WHERE code=?""",
                     arrayOf(item.code)
-                ).use { c -> if (c.moveToFirst()) c.getLong(0) else null }
-                val old = existing?.let(appDb::client)
+                ).use { cursor ->
+                    if (!cursor.moveToFirst()) null else {
+                        fun prior(index: Int): String? =
+                            if (cursor.isNull(index)) null else cursor.getString(index)
+                        ImportedClientState(
+                            id = cursor.getLong(0),
+                            name = prior(1), contact = prior(2), phone = prior(3),
+                            email = prior(4), address = prior(5),
+                            city = prior(6), postal = prior(7)
+                        )
+                    }
+                }
+                val old = previous?.let { appDb.client(it.id) }
                 val clientId = if (old == null) {
                     appDb.addClient(
                         name = item.name, business = "", nif = "", bankAccount = "",
@@ -140,13 +156,34 @@ internal object PrivateCsvImporter {
                         isProspect = item.prospect
                     )
                 } else {
-                    // No se sobrescriben cambios hechos manualmente en fichas ya importadas.
+                    appDb.updateClient(
+                        id = old.id,
+                        name = preferCsv(old.name, item.name, previous.name),
+                        business = old.businessName,
+                        nif = old.nif,
+                        bankAccount = old.bankAccount,
+                        contact = preferCsv(old.contactPerson, item.contact, previous.contact),
+                        phone = preferCsv(old.phone, item.phone, previous.phone),
+                        email = preferCsv(old.email, item.email, previous.email),
+                        address = preferCsv(old.address, item.address, previous.address),
+                        city = preferCsv(old.city, item.city, previous.city),
+                        postalCode = preferCsv(old.postalCode, item.postal, previous.postal),
+                        observations = old.observations,
+                        isProspect = old.isProspect
+                    )
                     old.id
                 }
                 check(clientId > 0) { "No se ha podido guardar un cliente" }
                 db.insertWithOnConflict("imported_clients", null, ContentValues().apply {
                     put("code", item.code)
                     put("client_id", clientId)
+                    put("source_name", item.name)
+                    put("source_contact", item.contact)
+                    put("source_phone", item.phone)
+                    put("source_email", item.email)
+                    put("source_address", item.address)
+                    put("source_city", item.city)
+                    put("source_postal", item.postal)
                 }, SQLiteDatabase.CONFLICT_REPLACE)
             }
             db.setTransactionSuccessful()
@@ -267,6 +304,27 @@ internal object PrivateCsvImporter {
         } finally { store.close() }
     }
 
+    /** Si el usuario modificó un campo, prevalece su edición sobre el CSV. */
+    private fun preferCsv(current: String, incoming: String, oldImported: String?): String {
+        if (incoming.isBlank()) return current
+        return when {
+            oldImported == null -> if (current.isBlank()) incoming else current
+            current == oldImported || current.isBlank() -> incoming
+            else -> current
+        }
+    }
+
+    private data class ImportedClientState(
+        val id: Long,
+        val name: String?,
+        val contact: String?,
+        val phone: String?,
+        val email: String?,
+        val address: String?,
+        val city: String?,
+        val postal: String?
+    )
+
     private data class ClientRow(
         val code: String, val name: String, val prospect: Boolean,
         val contact: String, val phone: String, val email: String,
@@ -281,7 +339,7 @@ internal object PrivateCsvImporter {
     )
 
     private class Store(context: Context) :
-        SQLiteOpenHelper(context, "agenda_private_data.db", null, 1) {
+        SQLiteOpenHelper(context, "agenda_private_data.db", null, 2) {
         override fun onCreate(db: SQLiteDatabase) {
             db.execSQL(
                 """CREATE TABLE private_products (
@@ -294,10 +352,20 @@ internal object PrivateCsvImporter {
             )
             db.execSQL(
                 """CREATE TABLE imported_clients (
-                    code TEXT PRIMARY KEY NOT NULL, client_id INTEGER NOT NULL
+                    code TEXT PRIMARY KEY NOT NULL, client_id INTEGER NOT NULL,
+                    source_name TEXT, source_contact TEXT, source_phone TEXT,
+                    source_email TEXT, source_address TEXT, source_city TEXT,
+                    source_postal TEXT
                 )"""
             )
         }
-        override fun onUpgrade(db: SQLiteDatabase, oldVersion: Int, newVersion: Int) {}
+        override fun onUpgrade(db: SQLiteDatabase, oldVersion: Int, newVersion: Int) {
+            if (oldVersion < 2) {
+                listOf("source_name", "source_contact", "source_phone", "source_email",
+                    "source_address", "source_city", "source_postal").forEach { field ->
+                    db.execSQL("ALTER TABLE imported_clients ADD COLUMN $field TEXT")
+                }
+            }
+        }
     }
 }
