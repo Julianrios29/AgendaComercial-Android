@@ -138,7 +138,7 @@ class CrmDb(context: Context) : SQLiteOpenHelper(context, "agenda_comercial.db",
             )
         """.trimIndent())
 
-        seed(db)
+        // V1: sin datos ficticios en nuevas instalaciones.
     }
 
     override fun onUpgrade(db: SQLiteDatabase, oldVersion: Int, newVersion: Int) {
@@ -158,7 +158,7 @@ class CrmDb(context: Context) : SQLiteOpenHelper(context, "agenda_comercial.db",
         }
         if (oldVersion < 5) {
             db.execSQL("ALTER TABLE visits ADD COLUMN was_prospect_at_completion INTEGER NOT NULL DEFAULT -1")
-            seedTestClients(db)
+            // V1: no incorporar clientes de ejemplo en migraciones.
         }
     }
 
