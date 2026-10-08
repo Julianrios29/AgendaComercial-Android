@@ -38,9 +38,9 @@ jobs:
           rm -rf /tmp/AgendaComercial-export
           mkdir -p /tmp/AgendaComercial-export/AgendaComercial-Android
           git archive --format=tar HEAD | tar -x -C /tmp/AgendaComercial-export/AgendaComercial-Android
-          cp app/build/outputs/apk/debug/app-debug.apk /tmp/AgendaComercial-export/AgendaComercial-Android/AgendaComercial-v0.16.7.apk
+          cp app/build/outputs/apk/debug/app-debug.apk /tmp/AgendaComercial-export/AgendaComercial-Android/AgendaComercial-v0.16.10.apk
           cd /tmp/AgendaComercial-export
-          zip -r "$GITHUB_WORKSPACE/AgendaComercial-recursos-completos-v0.16.7.zip" AgendaComercial-Android
+          zip -r "$GITHUB_WORKSPACE/AgendaComercial-recursos-completos-v0.16.10.zip" AgendaComercial-Android
 
       - uses: actions/upload-artifact@v4
         with:
@@ -51,5 +51,5 @@ jobs:
       - uses: actions/upload-artifact@v4
         with:
           name: AgendaComercial-source-complete
-          path: AgendaComercial-recursos-completos-v0.16.7.zip
+          path: AgendaComercial-recursos-completos-v0.16.10.zip
           if-no-files-found: error
