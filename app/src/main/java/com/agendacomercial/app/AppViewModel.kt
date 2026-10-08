@@ -45,6 +45,17 @@ class AppViewModel(app: Application) : AndroidViewModel(app) {
     fun client(id: Long) = db.client(id)
     fun visit(id: Long) = db.visit(id)
     fun visits(id: Long) = db.visits(id)
+    var catalogVersion by mutableStateOf(0)
+        private set
+
+    fun reloadPrivateData() {
+        catalogVersion++
+        refresh()
+    }
+
+    fun budgetProducts(): List<BudgetCatalogProduct> =
+        PrivateCsvImporter.catalog(getApplication<Application>())
+
     fun products() = db.products()
     fun orders(id: Long) = db.orders(id)
     fun consumption(id: Long) = db.consumption(id)
