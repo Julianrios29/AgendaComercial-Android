@@ -16,6 +16,14 @@ android {
         versionName = "1.0.0"
     }
 
+    // La APK de prueba se instala junto a versiones anteriores sin alterar sus datos.
+    buildTypes {
+        getByName("debug") {
+            applicationIdSuffix = ".v1test"
+            versionNameSuffix = "-pruebas"
+        }
+    }
+
     buildFeatures { compose = true }
 
     compileOptions {
