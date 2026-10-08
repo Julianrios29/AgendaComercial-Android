@@ -2630,6 +2630,29 @@ private fun BudgetScreen(
                                 )
                             }
 
+                            Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                                OutlinedTextField(
+                                    value = draft.cookingTimeText,
+                                    onValueChange = { value ->
+                                        updateLine(product) { it.copy(cookingTimeText = value) }
+                                    },
+                                    label = { Text("Tiempo cocción (min)") },
+                                    placeholder = { Text("Ej. 12-15") },
+                                    singleLine = true,
+                                    modifier = Modifier.weight(1f)
+                                )
+                                OutlinedTextField(
+                                    value = draft.cookingTemperatureText,
+                                    onValueChange = { value ->
+                                        updateLine(product) { it.copy(cookingTemperatureText = value) }
+                                    },
+                                    label = { Text("Temperatura (°C)") },
+                                    placeholder = { Text("Ej. 190") },
+                                    singleLine = true,
+                                    modifier = Modifier.weight(1f)
+                                )
+                            }
+
                             // Nunca se envían códigos o tarifas privados a webs externas.
                             if (product.webUrl.isNotBlank()) {
                                 TextButton(onClick = {
